@@ -1,0 +1,14 @@
+numpy
+scipy
+wandb
+colorlog
+tqdm
+h5py
+ipdb
+opencv-python
+moviepy
+mpi4py
+gym
+mujoco-py
+torch
+torchvision

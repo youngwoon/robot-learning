@@ -1,0 +1,53 @@
+# Mac OS
+.DS_Store
+*~
+.python-version
+
+# Log
+log
+wandb
+
+# Mujoco
+MUJOCO_LOG.TXT
+
+# Vim
+.*.s[a-w][a-z]
+Session.vim
+
+## VSCode
+.vscode
+
+# Data
+*.csv
+*.ini
+*.npy
+*.mp4
+*.zip
+*.hdf5
+*screenlog*
+
+# Python
+## Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+## C extensions
+#*.so
+
+## Distribution / packaging
+.Python
+build/
+*.egg-info/
+.installed.cfg
+*.egg
+
+## Rope project settings
+.ropeproject
+
+## Jupyter notebook
+**/*.ipynb
+.ipynb_checkpoints
+
+## flake8
+.flake8
