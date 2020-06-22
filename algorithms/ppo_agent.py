@@ -117,6 +117,7 @@ class PPOAgent(BaseAgent):
     def load_state_dict(self, ckpt):
         if "critic_state_dict" not in ckpt:
             # BC initialization
+            logger.warn("Load only actor from BC initialization")
             self._actor.load_state_dict(ckpt["actor_state_dict"], strict=False)
             self._network_cuda(self._config.device)
             self._ob_norm.load_state_dict(ckpt["ob_norm_state_dict"])
