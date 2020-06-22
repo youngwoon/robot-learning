@@ -220,8 +220,8 @@ def add_ppo_arguments(parser):
 
     parser.add_argument("--ppo_epoch", type=int, default=5)
     parser.add_argument("--max_grad_norm", type=float, default=100)
-    parser.set_defaults(evaluate_interval=50)
-    parser.set_defaults(ckpt_interval=100)
+    parser.set_defaults(evaluate_interval=20)
+    parser.set_defaults(ckpt_interval=20)
 
 
 def add_ddpg_arguments(parser):
