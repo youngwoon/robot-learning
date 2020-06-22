@@ -86,6 +86,7 @@ class RolloutRunner(object):
             done = False
             ep_len = 0
             ep_rew = 0
+            ep_rew_rl = 0
             if il:
                 ep_rew_il = 0
             ob = env.reset()
@@ -105,10 +106,17 @@ class RolloutRunner(object):
                 # take a step
                 ob, reward, done, info = env.step(ac)
 
-                rollout.add({"done": done, "rew": reward_il if il else reward})
+                # replace reward
+                if il:
+                    reward_rl = (1 - self._config.gail_env_reward) * reward_il + self._config.gail_env_reward * reward
+                else:
+                    reward_rl = reward
+
+                rollout.add({"done": done, "rew": reward_rl})
                 step += 1
                 ep_len += 1
                 ep_rew += reward
+                ep_rew_rl += reward_rl
                 if il:
                     ep_rew_il += reward_il
 
@@ -120,12 +128,12 @@ class RolloutRunner(object):
                     yield rollout.get(), ep_info.get_dict(only_scalar=True)
 
             # compute average/sum of information
-            ep_info.add({"len": ep_len, "rew": ep_rew})
+            ep_info.add({"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl})
             if il:
                 ep_info.add({"rew_il": ep_rew_il})
             reward_info_dict = reward_info.get_dict(reduction="sum", only_scalar=True)
             ep_info.add(reward_info_dict)
-            reward_info_dict.update({"len": ep_len, "rew": ep_rew})
+            reward_info_dict.update({"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl})
             if il:
                 reward_info_dict.update({"rew_il": ep_rew_il})
 
@@ -166,6 +174,7 @@ class RolloutRunner(object):
         done = False
         ep_len = 0
         ep_rew = 0
+        ep_rew_rl = 0
         if il:
             ep_rew_il = 0
 
@@ -189,9 +198,16 @@ class RolloutRunner(object):
             # take a step
             ob, reward, done, info = env.step(ac)
 
-            rollout.add({"done": done, "rew": reward_il if il else reward})
+            # replace reward
+            if il:
+                reward_rl = (1 - self._config.gail_env_reward) * reward_il + self._config.gail_env_reward * reward
+            else:
+                reward_rl = reward
+
+            rollout.add({"done": done, "rew": reward_rl})
             ep_len += 1
             ep_rew += reward
+            ep_rew_rl += reward_rl
             if il:
                 ep_rew_il += reward_il
 
@@ -200,7 +216,7 @@ class RolloutRunner(object):
                 frame_info = info.copy()
                 if il:
                     frame_info.update(
-                        {"ep_rew_il": ep_rew_il, "rew_il": reward_il}
+                        {"ep_rew_il": ep_rew_il, "rew_il": reward_il, "rew_rl": reward_rl}
                     )
                 self._store_frame(env, ep_len, ep_rew, frame_info)
 
@@ -208,7 +224,7 @@ class RolloutRunner(object):
         rollout.add({"ob": ob})
 
         # compute average/sum of information
-        ep_info = {"len": ep_len, "rew": ep_rew}
+        ep_info = {"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl}
         if il:
             ep_info["rew_il"] = ep_rew_il
         ep_info.update(reward_info.get_dict(reduction="sum", only_scalar=True))

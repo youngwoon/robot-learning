@@ -253,8 +253,9 @@ def add_gail_arguments(parser):
     parser.add_argument(
         "--discriminator_activation", type=str, default="tanh", choices=["relu", "elu", "tanh"]
     )
-    parser.add_argument("--discriminator_update_freq", type=int, default=5)
+    parser.add_argument("--discriminator_update_freq", type=int, default=4)
     parser.add_argument("--gail_no_action", type=str2bool, default=False)
+    parser.add_argument("--gail_env_reward", type=float, default=0.0)
 
 
 def argparser():
