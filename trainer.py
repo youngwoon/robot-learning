@@ -279,7 +279,6 @@ class Trainer(object):
             logger.warn("Evalute run %d", i + 1)
             rollout, info, frames = self._runner.run_episode(is_train=False, record_video=record_video)
             rollouts.append(rollout)
-            info_history.add(info)
             logger.info("rollout: %s", {k: v for k, v in info.items() if not "qpos" in k})
 
             if record_video:
@@ -294,6 +293,8 @@ class Trainer(object):
                 )
                 video_path = self._save_video(fname, frames)
                 info["video"] = wandb.Video(video_path, fps=15, format="mp4")
+
+            info_history.add(info)
 
         return rollouts, info_history
 
