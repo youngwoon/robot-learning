@@ -22,7 +22,7 @@ from .algorithms.rollouts import RolloutRunner
 from .utils.info_dict import Info
 from .utils.logger import logger
 from .utils.pytorch import get_ckpt_path, count_parameters
-from .utils.mpi import mpi_sum
+from .utils.mpi import mpi_sum, mpi_average
 from .environments import make_env
 
 
@@ -207,6 +207,7 @@ class Trainer(object):
             # collect rollouts
             if runner:
                 rollout, info = next(runner)
+                info = mpi_average(info)
                 self._agent.store_episode(rollout)
                 step_per_batch = mpi_sum(len(rollout["ac"]))
             else:
