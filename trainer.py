@@ -164,13 +164,6 @@ class Trainer(object):
 
     def train(self):
         """ Trains an agent. """
-        if self._is_rl:
-            self._train_rl()
-        else:
-            self._train_il()
-
-    def _train_il(self):
-        """ Trains an IL agent. """
         config = self._config
 
         # load checkpoint
@@ -190,8 +183,14 @@ class Trainer(object):
         # decide how many episodes or how long rollout to collect
         if self._config.algo == "bc":
             runner = None
+            assert config.warm_up_steps == 0, "No warm-up is required for BC."
         elif self._config.algo == "gail":
             runner = self._runner.run(every_steps=self._config.rollout_length)
+        elif self._config.algo == "ppo":
+            runner = self._runner.run(every_steps=self._config.rollout_length)
+        elif self._config.algo == "sac":
+            # runner = self._runner.run(every_steps=1)
+            runner = self._runner.run(every_episodes=1)
 
         st_time = time()
         st_step = step
@@ -220,91 +219,6 @@ class Trainer(object):
             logger.info("Update networks done")
 
             if runner and step < config.max_ob_norm_step:
-                self._update_normalizer(rollout)
-
-            step += step_per_batch
-            update_iter += 1
-
-            # log training and episode information or evaluate
-            if self._is_chef:
-                pbar.update(step_per_batch)
-                ep_info.add(info)
-                train_info.add(_train_info)
-
-                if update_iter % config.log_interval == 0:
-                    train_info.add(
-                        {
-                            "sec": (time() - st_time) / config.log_interval,
-                            "steps_per_sec": (step - st_step) / (time() - st_time),
-                            "update_iter": update_iter,
-                        }
-                    )
-                    st_time = time()
-                    st_step = step
-                    self._log_train(step, train_info.get_dict(), ep_info.get_dict())
-                    ep_info = Info()
-                    train_info = Info()
-
-                if update_iter % config.evaluate_interval == 1:
-                    logger.info("Evaluate at %d", update_iter)
-                    rollout, info = self._evaluate(step=step, record_video=config.record_video)
-                    self._log_test(step, info)
-
-                if update_iter % config.ckpt_interval == 0:
-                    self._save_ckpt(step, update_iter)
-
-        self._save_ckpt(step, update_iter)
-        logger.info("Reached %s steps. worker %d stopped.", step, config.rank)
-
-    def _train_rl(self):
-        """ Trains an RL agent. """
-        config = self._config
-
-        # load checkpoint
-        step, update_iter = self._load_ckpt(config.init_ckpt_path, config.ckpt_num)
-
-        # sync the networks across the cpus
-        self._agent.sync_networks()
-
-        logger.info("Start training at step=%d", step)
-        if self._is_chef:
-            pbar = tqdm(
-                initial=step, total=config.max_global_step, desc=config.run_name
-            )
-            ep_info = Info()
-            train_info = Info()
-
-        # decide how many episodes or how long rollout to collect
-        if self._config.algo == "ppo":
-            runner = self._runner.run(every_steps=self._config.rollout_length)
-        elif self._config.algo == "sac":
-            #runner = self._runner.run(every_steps=1)
-            runner = self._runner.run(every_episodes=1)
-
-        st_time = time()
-        st_step = step
-
-        while step < config.warm_up_steps:
-            rollout, info = next(runner)
-            self._agent.store_episode(rollout)
-            step_per_batch = mpi_sum(len(rollout["ac"]))
-            step += step_per_batch
-            if self._is_chef:
-                pbar.update(step_per_batch)
-
-        while step < config.max_global_step:
-            # collect rollouts
-            rollout, info = next(runner)
-            self._agent.store_episode(rollout)
-
-            step_per_batch = mpi_sum(len(rollout["ac"]))
-
-            # train an agent
-            logger.info("Update networks %d", update_iter)
-            _train_info = self._agent.train()
-            logger.info("Update networks done")
-
-            if step < config.max_ob_norm_step:
                 self._update_normalizer(rollout)
 
             step += step_per_batch
