@@ -11,7 +11,7 @@ import torch
 from six.moves import shlex_quote
 from mpi4py import MPI
 
-from .config import create_parser, add_method_arguments
+from .config import create_parser
 from .trainer import Trainer
 from .utils.logger import logger
 from .utils.mpi import mpi_sync
