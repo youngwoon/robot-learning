@@ -237,6 +237,8 @@ class RolloutRunner(object):
 
         # render video frame
         frame = env.render("rgb_array") * 255.0
+        if len(frame.shape) == 4:
+            frame = frame[0]
         fheight, fwidth = frame.shape[:2]
         frame = np.concatenate([frame, np.zeros((fheight, fwidth, 3))], 0)
 

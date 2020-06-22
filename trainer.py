@@ -40,8 +40,11 @@ class Trainer(object):
         self._is_rl = config.algo in RL_ALGOS
 
         # create environment
+        config_eval = copy.copy(config)
+        if hasattr(config_eval, "port"):
+            config_eval.port += 1
         self._env_eval = (
-            make_env(config.env, copy.copy(config)) if self._is_chef else None
+            make_env(config.env, config_eval) if self._is_chef else None
         )
 
         self._env = make_env(config.env, config)
@@ -105,7 +108,7 @@ class Trainer(object):
 
         if ckpt_path is not None:
             logger.warn("Load checkpoint %s", ckpt_path)
-            ckpt = torch.load(ckpt_path)
+            ckpt = torch.load(ckpt_path, map_location=self._config.device)
             self._agent.load_state_dict(ckpt["agent"])
 
             if self._config.is_train and self._agent.is_off_policy():

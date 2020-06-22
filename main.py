@@ -11,7 +11,7 @@ import torch
 from six.moves import shlex_quote
 from mpi4py import MPI
 
-from .config import argparser
+from .config import create_parser, add_method_arguments
 from .trainer import Trainer
 from .utils.logger import logger
 from .utils.mpi import mpi_sync
@@ -21,9 +21,12 @@ np.set_printoptions(precision=3)
 np.set_printoptions(suppress=True)
 
 
-def run():
+def run(parser=None):
     """ Runs Trainer. """
-    config, unparsed = argparser()
+    if parser is None:
+        parser = create_parser()
+
+    config, unparsed = parser.parse_known_args()
     if len(unparsed):
         logger.error("Unparsed argument is detected:\n%s", unparsed)
         return
@@ -35,7 +38,8 @@ def run():
     set_log_path(config)
 
     config.seed = config.seed + rank
-    # config.port = config.port + rank * 2 # training env + evaluation env
+    if hasattr(config, "port"):
+        config.port = config.port + rank * 2 # training env + evaluation env
 
     if config.is_chef:
         logger.warn("Run a base worker.")

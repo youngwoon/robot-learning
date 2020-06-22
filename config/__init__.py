@@ -1,4 +1,4 @@
-""" Define parameters for algorithms.  """
+""" Define parameters for algorithms. """
 
 import argparse
 
@@ -39,6 +39,14 @@ def create_parser():
         help="environment name",
     )
 
+    parser.add_argument("--seed", type=int, default=123)
+
+    add_method_arguments(parser)
+
+    return parser
+
+
+def add_method_arguments(parser):
     # algorithm
     parser.add_argument(
         "--algo",
@@ -70,8 +78,6 @@ def create_parser():
     # misc
     parser.add_argument("--run_prefix", type=str, default=None)
     parser.add_argument("--notes", type=str, default="")
-    parser.add_argument("--seed", type=int, default=123, help="random seed")
-    parser.add_argument("--debug", type=str2bool, default=False)
 
     # log
     parser.add_argument("--log_interval", type=int, default=1)
@@ -204,7 +210,6 @@ def add_sac_arguments(parser):
     )
     parser.set_defaults(evaluate_interval=100)
     parser.set_defaults(ckpt_interval=100)
-    parser.set_defaults(batch_size=128)
 
 
 def add_ppo_arguments(parser):
@@ -229,7 +234,7 @@ def add_il_arguments(parser):
         "--demo_subsample_interval",
         type=int,
         default=1,
-        # default=20,
+        # default=20, # used in GAIL
         help="subsample interval of expert transitions",
     )
 
