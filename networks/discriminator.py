@@ -35,7 +35,7 @@ class Discriminator(nn.Module):
             ob = [x.unsqueeze(0) for x in ob]
         ob = torch.cat(ob, dim=-1)
 
-        if ac:
+        if ac is not None:
             # flatten action
             if isinstance(ac, OrderedDict):
                 ac = list(ac.values())

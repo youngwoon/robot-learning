@@ -38,7 +38,7 @@ class GAILAgent(BaseAgent):
         self._actor = Actor(config, ob_space, ac_space, config.tanh_policy)
         self._old_actor = Actor(config, ob_space, ac_space, config.tanh_policy)
         self._critic = Critic(config, ob_space)
-        self._discriminator = Discriminator(config, ob_space, ac_space)
+        self._discriminator = Discriminator(config, ob_space, ac_space if not config.gail_no_action else None)
         self._discriminator_loss = nn.BCEWithLogitsLoss()
         self._network_cuda(config.device)
 
@@ -85,7 +85,9 @@ class GAILAgent(BaseAgent):
     def predict_reward(self, ob, ac=None):
         ob = self.normalize(ob)
         ob = to_tensor(ob, self._config.device)
-        if ac:
+        if self._config.gail_no_action:
+            ac = None
+        if ac is not None:
             ac = to_tensor(ac, self._config.device)
 
         with torch.no_grad():
@@ -247,14 +249,20 @@ class GAILAgent(BaseAgent):
 
         p_bs = len(policy_data["ac"])
         p_o = _to_tensor(p_o)
-        p_ac = _to_tensor(policy_data["ac"])
+        if self._config.gail_no_action:
+            p_ac = None
+        else:
+            p_ac = _to_tensor(policy_data["ac"])
 
         e_o = expert_data["ob"]
         e_o = self.normalize(e_o)
 
         e_bs = len(expert_data["ac"])
         e_o = _to_tensor(e_o)
-        e_ac = _to_tensor(expert_data["ac"])
+        if self._config.gail_no_action:
+            e_ac = None
+        else:
+            e_ac = _to_tensor(expert_data["ac"])
 
         p_logit = self._discriminator(p_o, p_ac)
         e_logit = self._discriminator(e_o, e_ac)
