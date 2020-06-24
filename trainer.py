@@ -159,6 +159,9 @@ class Trainer(object):
             for k, v in ep_info.items():
                 if isinstance(v, wandb.Video):
                     wandb.log({"test_ep/%s" % k: v}, step=step)
+                elif isinstance(v, list) and isinstance(v[0], wandb.Video):
+                    for i, video in enumerate(v):
+                        wandb.log({"test_ep/%s_%d" % (k, i): video}, step=step)
                 else:
                     wandb.log({"test_ep/%s" % k: np.mean(v)}, step=step)
 
