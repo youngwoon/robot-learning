@@ -150,4 +150,6 @@ class Critic(nn.Module):
         assert len(out.shape) == 2
 
         out = [fc(out) for fc in self.fcs]
+        if len(out) == 1:
+            return out[0]
         return out

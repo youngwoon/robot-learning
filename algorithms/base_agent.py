@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 import torch
+import numpy as np
 
 from ..utils.normalizer import Normalizer
 from ..utils.pytorch import to_tensor, center_crop
@@ -27,13 +28,12 @@ class BaseAgent(object):
         """ Returns action and the actor's activation given an observation @ob. """
         ob = self.normalize(ob)
 
-        if self._config.encoder_type == "cnn":
-            ob = ob.copy()
-            for k, v in ob.items():
-                if len(v.shape) == 3:
-                    ob[k] = center_crop(v, self._config.encoder_image_size)
-                else:
-                    ob[k] = np.expand_dims(ob[k], axis=0)
+        ob = ob.copy()
+        for k, v in ob.items():
+            if self._config.encoder_type == "cnn" and len(v.shape) == 3:
+                ob[k] = center_crop(v, self._config.encoder_image_size)
+            else:
+                ob[k] = np.expand_dims(ob[k], axis=0)
 
         with torch.no_grad():
             ob = to_tensor(ob, self._config.device)
