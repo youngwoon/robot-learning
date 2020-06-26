@@ -30,12 +30,13 @@ class BaseAgent(object):
         if self._config.encoder_type == "cnn":
             ob = ob.copy()
             for k, v in ob.items():
-                if len(v.shape) in [3, 4]:
+                if len(v.shape) == 3:
                     ob[k] = center_crop(v, self._config.encoder_image_size)
-
-        ob = to_tensor(ob, self._config.device)
+                else:
+                    ob[k] = np.expand_dims(ob[k], axis=0)
 
         with torch.no_grad():
+            ob = to_tensor(ob, self._config.device)
             ac, activation, _, _ = self._actor.act(ob, deterministic=not is_train)
 
         for k in ac.keys():

@@ -26,9 +26,9 @@ class Encoder(nn.Module):
                     encoder_output_dim += gym.spaces.flatdim(v)
                 else:
                     if len(v.shape) == 3:
-                        image_dim = v.shape[2]
+                        image_dim = v.shape[0]
                     elif len(v.shape) == 4:
-                        image_dim = v.shape[0] * v.shape[3]
+                        image_dim = v.shape[0] * v.shape[1]
                     self.base[k] = CNN(config, image_dim)
                     encoder_output_dim += self.base[k].output_dim
             elif len(v.shape) == 1:
@@ -42,10 +42,10 @@ class Encoder(nn.Module):
     def forward(self, ob, detach_conv=False):
         encoder_outputs = []
         for k, v in ob.items():
-            if len(v.shape) == len(self._ob_space.spaces[k].shape):
-                if len(v.shape) != 4:
-                    v = v.unsqueeze(0)
             if self.base[k] is not None:
+                if isinstance(self.base[k], CNN):
+                    if v.max() > 1.0:
+                        v = v.float() / 255.0
                 encoder_outputs.append(
                     self.base[k](v, detach_conv=detach_conv)
                 )
@@ -57,6 +57,6 @@ class Encoder(nn.Module):
 
     def copy_conv_weights_from(self, source):
         """ Tie convolutional layers """
-        for k, v in ob.items():
+        for k in self.base.keys():
             if self.base[k] is not None:
                 self.base[k].copy_conv_weights_from(source.base[k])

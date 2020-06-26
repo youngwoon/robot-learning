@@ -14,12 +14,12 @@ from .distributions import (
 )
 from .utils import MLP, flatten_ac
 from .encoder import Encoder
-from ..utils.pytorch import to_tensor, center_crop
+from ..utils.pytorch import to_tensor
 from ..utils.logger import logger
 
 
 class Actor(nn.Module):
-    def __init__(self, config, ob_space, ac_space, tanh_policy):
+    def __init__(self, config, ob_space, ac_space, tanh_policy, encoder=None):
         super().__init__()
         self._config = config
         self._ac_space = ac_space
@@ -27,22 +27,34 @@ class Actor(nn.Module):
         self._tanh = tanh_policy
         self._gaussian = config.gaussian_policy
 
-        self.encoder = Encoder(config, ob_space)
+        if encoder:
+            self.encoder = encoder
+        else:
+            self.encoder = Encoder(config, ob_space)
 
         self.fc = MLP(
             config, self.encoder.output_dim, config.policy_mlp_dim[-1], config.policy_mlp_dim[:-1]
         )
-        self.fc_means = nn.ModuleDict()
-        self.fc_log_stds = nn.ModuleDict()
 
+        self.fcs = nn.ModuleDict()
+        self._dists = {}
         for k, v in ac_space.spaces.items():
-            self.fc_means.update(
-                {k: MLP(config, config.policy_mlp_dim[-1], gym.spaces.flatdim(v))}
-            )
             if isinstance(v, gym.spaces.Box) and self._gaussian:
-                self.fc_log_stds.update(
+                self.fcs.update(
+                    {k: MLP(config, config.policy_mlp_dim[-1], gym.spaces.flatdim(v) * 2)}
+                )
+            else:
+                self.fcs.update(
                     {k: MLP(config, config.policy_mlp_dim[-1], gym.spaces.flatdim(v))}
                 )
+
+            if isinstance(v, gym.spaces.Box):
+                if self._gaussian:
+                    self._dists[k] = lambda m, s: FixedNormal(m, s)
+                else:
+                    self._dists[k] = lambda m, s: Identity(m)
+            else:
+                self._dists[k] = lambda m, s: FixedCategorical(logits=m)
 
     @property
     def info(self):
@@ -54,13 +66,13 @@ class Actor(nn.Module):
 
         means, stds = OrderedDict(), OrderedDict()
         for k, v in self._ac_space.spaces.items():
-            mean = self.fc_means[k](out)
-            if k in self.fc_log_stds:
-                log_std = self.fc_log_stds[k](out)
-                log_std = torch.clamp(log_std, -10, 2)
-                std = torch.exp(log_std.double())
+            if isinstance(v, gym.spaces.Box) and self._gaussian:
+                mean, log_std = self.fcs[k](out).chunk(2, dim=-1)
+                log_std_min, log_std_max = -10, 2
+                log_std = -log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
+                std = log_std.exp()
             else:
-                std = None
+                mean, std = self.fcs[k](out), None
 
             means[k] = mean
             stds[k] = std
@@ -72,14 +84,8 @@ class Actor(nn.Module):
         means, stds = self.forward(ob, detach_conv=detach_conv)
 
         dists = OrderedDict()
-        for k, v in self._ac_space.spaces.items():
-            if isinstance(v, gym.spaces.Box):
-                if self._gaussian:
-                    dists[k] = FixedNormal(means[k], stds[k])
-                else:
-                    dists[k] = Identity(means[k])
-            else:
-                dists[k] = FixedCategorical(logits=means[k])
+        for k in means.keys():
+            dists[k] = self._dists[k](means[k], stds[k])
 
         actions = OrderedDict()
         mixed_dist = MixedDistribution(dists)
@@ -118,16 +124,23 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, config, ob_space, ac_space=None):
+    def __init__(self, config, ob_space, ac_space=None, encoder=None):
         super().__init__()
         self._config = config
 
-        self.encoder = Encoder(config, ob_space)
+        if encoder:
+            self.encoder = encoder
+        else:
+            self.encoder = Encoder(config, ob_space)
 
         input_dim = self.encoder.output_dim
         if ac_space is not None:
             input_dim += gym.spaces.flatdim(ac_space)
-        self.fc = MLP(config, input_dim, 1, config.critic_mlp_dim)
+
+        self.fcs = nn.ModuleList()
+
+        for _ in range(config.critic_ensemble):
+            self.fcs.append(MLP(config, input_dim, 1, config.critic_mlp_dim))
 
     def forward(self, ob, ac=None, detach_conv=False):
         out = self.encoder(ob, detach_conv=detach_conv)
@@ -136,5 +149,5 @@ class Critic(nn.Module):
             out = torch.cat([out, flatten_ac(ac)], dim=-1)
         assert len(out.shape) == 2
 
-        out = self.fc(out)
+        out = [fc(out) for fc in self.fcs]
         return out

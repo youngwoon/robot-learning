@@ -109,6 +109,8 @@ def sync_networks(network):
     netowrk is the network you want to sync
     """
     comm = MPI.COMM_WORLD
+    if comm.Get_size() == 1:
+        return
     flat_params, params_shape = _get_flat_params(network)
     comm.Bcast(flat_params, root=0)
     # set the flat params back to the network
@@ -151,8 +153,10 @@ def _set_flat_params(network, params_shape, params):
 
 # sync gradients across the different cores
 def sync_grads(network):
-    flat_grads, grads_shape = _get_flat_grads(network)
     comm = MPI.COMM_WORLD
+    if comm.Get_size() == 1:
+        return
+    flat_grads, grads_shape = _get_flat_grads(network)
     global_grads = np.zeros_like(flat_grads)
     comm.Allreduce(flat_grads, global_grads, op=MPI.SUM)
     _set_flat_grads(network, grads_shape, global_grads)
@@ -239,11 +243,11 @@ def obs2tensor(obs, device):
 def to_tensor(x, device):
     if isinstance(x, dict):
         return OrderedDict(
-            [(k, torch.tensor(v, dtype=torch.float32).to(device)) for k, v in x.items()]
+            [(k, torch.as_tensor(v, device=device)) for k, v in x.items()]
         )
     if isinstance(x, list):
-        return [torch.tensor(v, dtype=torch.float32).to(device) for v in x]
-    return torch.tensor(x, dtype=torch.float32).to(device)
+        return [torch.as_tensor(v, device=device) for v in x]
+    return torch.as_tensor(x, device=device)
 
 
 def list2dict(rollout):
@@ -290,15 +294,10 @@ def unflatten(flattened, separator="."):
 def center_crop(img, out=84):
     """
         args:
-        imgs: np.array shape (H,W,C) or (N,H,W,C)
+        imgs: np.array shape (C,H,W)
         out: output size (e.g. 84)
-        returns np.array shape (1,C,H,W) or (1,N*C,H,W)
+        returns np.array shape (1,C,H,W)
     """
-    if len(img.shape) == 3:
-        img = img.transpose(2, 0, 1)
-    elif len(img.shape) == 4:
-        img = img.transpose(0, 3, 1, 2).reshape(-1, img.shape[1], img.shape[2])
-
     h, w = img.shape[1:]
     new_h, new_w = out, out
 
@@ -314,17 +313,10 @@ def center_crop(img, out=84):
 def random_crop(imgs, out=84):
     """
         args:
-        imgs: np.array shape (B,H,W,C) or (B,N,H,W,C)
+        imgs: np.array shape (B,C,H,W)
         out: output size (e.g. 84)
-        returns np.array shape (B,C,H,W) or (B,N*C,H,W)
+        returns np.array
     """
-    if len(imgs.shape) == 4:
-        imgs = imgs.transpose(0, 3, 1, 2)
-    elif len(imgs.shape) == 5:
-        imgs = imgs.transpose(0, 1, 4, 2, 3).reshape(
-            imgs.shape[0], -1, imgs.shape[2], imgs.shape[3]
-        )
-
     b, c, h, w = imgs.shape
     crop_max = h - out + 1
     w1 = np.random.randint(0, crop_max, b)

@@ -22,16 +22,18 @@ formatter = colorlog.ColoredFormatter(
 
 logger = colorlog.getLogger("robot-learning")
 logger.setLevel(logging.DEBUG)
+logger.propagate = False
 
 # fh = logging.FileHandler('log')
 # fh.setLevel(logging.DEBUG)
 # fh.setFormatter(formatter)
 # logger.addHandler(fh)
 
-ch = colorlog.StreamHandler()
-ch.setLevel(logging.DEBUG)
-ch.setFormatter(formatter)
-logger.addHandler(ch)
+if not logger.handlers:
+    ch = colorlog.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
 
 class StopWatch(object):

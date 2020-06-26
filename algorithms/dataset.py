@@ -6,9 +6,100 @@ import numpy as np
 from ..utils.pytorch import random_crop
 
 
+def make_buffer(shapes, buffer_size):
+    buffer = {}
+    for k, v in shapes.items():
+        if isinstance(v, dict):
+            buffer[k] = make_buffer(v, buffer_size)
+        else:
+            if len(v) >= 3:
+                buffer[k] = np.empty((buffer_size, *v), dtype=np.uint8)
+            else:
+                buffer[k] = np.empty((buffer_size, *v), dtype=np.float32)
+    return buffer
+
+
+def add_rollout(buffer, rollout, idx: int):
+    if isinstance(rollout, list):
+        rollout = rollout[0]
+
+    if isinstance(rollout, dict):
+        for k in rollout.keys():
+            add_rollout(buffer[k], rollout[k], idx)
+    else:
+        np.copyto(buffer[idx], rollout)
+
+
+def get_batch(buffer: dict, idxs):
+    batch = {}
+    for k in buffer.keys():
+        if isinstance(buffer[k], dict):
+            batch[k] = get_batch(buffer[k], idxs)
+        else:
+            batch[k] = buffer[k][idxs]
+    return batch
+
+
+def augment_ob(batch, image_crop_size):
+    for k, v in batch.items():
+        if isinstance(batch[k], dict):
+            augment_ob(batch[k], image_crop_size)
+        elif len(batch[k].shape) > 3:
+            batch[k] = random_crop(batch[k], image_crop_size)
+
+
+class ReplayBufferPerStep(object):
+    def __init__(self, shapes: dict, buffer_size: int, image_crop_size=84):
+        self._capacity = buffer_size
+
+        self._shapes = shapes
+        self._keys = list(shapes.keys())
+        self._image_crop_size = image_crop_size
+
+        self._buffer = make_buffer(shapes, buffer_size)
+        self._idx = 0
+        self._full = False
+
+    def clear(self):
+        self._idx = 0
+        self._full = False
+
+    # store the episode
+    def store_episode(self, rollout):
+        for k in self._keys:
+            add_rollout(self._buffer[k], rollout[k], self._idx)
+
+        self._idx = (self._idx + 1) % self._capacity
+        self._full = self._full or self._idx == 0
+
+    # sample the data from the replay buffer
+    def sample(self, batch_size):
+        idxs = np.random.randint(
+            0, self._capacity if self._full else self._idx, size=batch_size
+        )
+        batch = get_batch(self._buffer, idxs)
+
+        # apply random crop to image
+        augment_ob(batch, self._image_crop_size)
+
+        return batch
+
+    def state_dict(self):
+        return {
+            "buffer": self._buffer,
+            "idx": self._idx,
+            "full": self._full
+        }
+
+    def load_state_dict(self, state_dict):
+        self._buffer = state_dict["buffer"]
+        self._idx = state_dict["idx"]
+        self._full = state_dict["full"]
+
+
 class ReplayBuffer(object):
     def __init__(self, keys, buffer_size, sample_func):
-        self._size = buffer_size
+        self._capacity = buffer_size
         self._sample_func = sample_func
 
         # create the buffer to store info
@@ -25,7 +116,7 @@ class ReplayBuffer(object):
     def store_episode(self, rollout):
         if self._new_episode:
             for k in self._keys:
-                if self._current_size < self._size:
+                if self._current_size < self._capacity:
                     self._buffer[k].append(rollout[k])
                 else:
                     self._buffer[k][self._idx] = rollout[k]
@@ -36,11 +127,8 @@ class ReplayBuffer(object):
                 else:
                     self._buffer[k][self._idx].append(rollout[k])
 
-        assert (
-            len(self._buffer["ob"][self._idx]) == len(self._buffer["ac"][self._idx]) + 1
-        )
         if rollout["done"][-1]:
-            self._idx = (self._idx + 1) % self._size
+            self._idx = (self._idx + 1) % self._capacity
             self._current_size += 1
             self._new_episode = True
 

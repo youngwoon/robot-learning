@@ -4,8 +4,8 @@ Runs rollouts (RolloutRunner class) and collects transitions using Rollout class
 
 import random
 import pickle
-
 from collections import defaultdict
+
 import numpy as np
 import cv2
 
@@ -31,8 +31,9 @@ class Rollout(object):
         """ Returns rollout buffer and clears buffer. """
         batch = {}
         batch["ob"] = self._history["ob"]
+        batch["ob_next"] = self._history["ob_next"]
         batch["ac"] = self._history["ac"]
-        batch["ac_before_activation"] = self._history["ac_before_activation"]
+        # batch["ac_before_activation"] = self._history["ac_before_activation"]
         batch["done"] = self._history["done"]
         batch["rew"] = self._history["rew"]
         self._history = defaultdict(list)
@@ -94,7 +95,10 @@ class RolloutRunner(object):
             # run rollout
             while not done:
                 # sample action from policy
-                ac, ac_before_activation = pi.act(ob, is_train=is_train)
+                if step < config.warm_up_steps:
+                    ac, ac_before_activation = env.action_space.sample(), 0
+                else:
+                    ac, ac_before_activation = pi.act(ob, is_train=is_train)
 
                 rollout.add(
                     {"ob": ob, "ac": ac, "ac_before_activation": ac_before_activation}
@@ -105,6 +109,7 @@ class RolloutRunner(object):
 
                 # take a step
                 ob, reward, done, info = env.step(ac)
+                rollout.add({"ob_next": ob})
 
                 # replace reward
                 if il:
@@ -236,19 +241,26 @@ class RolloutRunner(object):
         color = (200, 200, 200)
 
         # render video frame
-        frame = env.render("rgb_array") * 255.0
+        frame = env.render("rgb_array")
         if len(frame.shape) == 4:
             frame = frame[0]
-        fheight, fwidth = frame.shape[:2]
-        frame = np.concatenate([frame, np.zeros((fheight, fwidth, 3))], 0)
+        if np.max(frame) <= 1.0:
+            frame *= 255.0
+
+        h, w = frame.shape[:2]
+        if h < 500:
+            h, w = 500, 500
+            frame = cv2.resize(frame, (h, w))
+        frame = np.concatenate([frame, np.zeros((h, w, 3))], 0)
+        scale = h / 500
 
         # add caption to video frame
         if self._config.record_video_caption:
             text = "{:4} {}".format(ep_len, ep_rew)
-            font_size = 0.4
+            font_size = 0.4 * scale
             thickness = 1
-            offset = 12
-            x, y = 5, fheight + 10
+            offset = int(12 * scale)
+            x, y = int(5 * scale), h + int(10 * scale)
             cv2.putText(
                 frame,
                 text,

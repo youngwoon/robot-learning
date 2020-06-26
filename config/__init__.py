@@ -38,7 +38,6 @@ def create_parser():
         default="Hopper-v2",
         help="environment name",
     )
-
     parser.add_argument("--seed", type=int, default=123)
 
     add_method_arguments(parser)
@@ -74,6 +73,11 @@ def add_method_arguments(parser):
         default=1,
         help="number of episodes for evaluation"
     )
+
+    # environment
+    parser.add_argument("--screen_width", type=int, default=480)
+    parser.add_argument("--screen_height", type=int, default=480)
+    parser.add_argument("--action_repeat", type=int, default=1)
 
     # misc
     parser.add_argument("--run_prefix", type=str, default=None)
@@ -145,8 +149,9 @@ def add_method_arguments(parser):
 
 def add_policy_arguments(parser):
     # network
-    parser.add_argument("--policy_mlp_dim", nargs="+", default=[256, 256])
-    parser.add_argument("--critic_mlp_dim", nargs="+", default=[256, 256])
+    parser.add_argument("--policy_mlp_dim", type=str2intlist, default=[256, 256])
+    parser.add_argument("--critic_mlp_dim", type=str2intlist, default=[256, 256])
+    parser.add_argument("--critic_ensemble", type=int, default=1)
     parser.add_argument(
         "--policy_activation", type=str, default="relu", choices=["relu", "elu", "tanh"]
     )
@@ -159,18 +164,15 @@ def add_policy_arguments(parser):
     )
     parser.add_argument("--encoder_image_size", type=int, default=84)
     parser.add_argument("--encoder_conv_dim", type=int, default=32)
-    parser.add_argument("--encoder_mlp_dim", nargs="+", default=[128, 128])
-    parser.add_argument("--encoder_kernel_size", nargs="+", default=[3, 3, 3, 3])
-    parser.add_argument("--encoder_stride", nargs="+", default=[2, 1, 1, 1])
+    parser.add_argument("--encoder_kernel_size", type=str2intlist, default=[3, 3, 3, 3])
+    parser.add_argument("--encoder_stride", type=str2intlist, default=[2, 1, 1, 1])
     parser.add_argument("--encoder_conv_output_dim", type=int, default=50)
+    parser.add_argument("--encoder_soft_update_weight", type=float, default=0.95)
     args, unparsed = parser.parse_known_args()
     if args.encoder_type == "cnn":
         parser.set_defaults(screen_width=100, screen_height=100)
-
-    # epsilon greedy
-    parser.add_argument("--epsilon_greedy", type=str2bool, default=False)
-    parser.add_argument("--epsilon_greedy_eps", type=float, default=0.3)
-    parser.add_argument("--epsilon_greedy_noise", type=float, default=0.2)
+        parser.set_defaults(policy_mlp_dim=[1024, 1024])
+        parser.set_defaults(critic_mlp_dim=[1024, 1024])
 
     # actor-critic
     parser.add_argument(
@@ -200,16 +202,26 @@ def add_off_policy_arguments(parser):
     parser.add_argument(
         "--buffer_size", type=int, default=int(1e6), help="the size of the buffer"
     )
+    parser.set_defaults(warm_up_steps=1000)
+    parser.set_defaults(ob_norm=False)
 
 
 def add_sac_arguments(parser):
     parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
-    parser.add_argument("--actor_update_freq", type=int, default=5)
+    parser.add_argument("--actor_update_freq", type=int, default=2)
+    parser.add_argument("--critic_target_update_freq", type=int, default=2)
+    parser.add_argument("--alpha_init_temperature", type=float, default=0.1)
     parser.add_argument(
         "--alpha_lr", type=float, default=1e-4, help="the learning rate of the actor"
     )
-    parser.set_defaults(evaluate_interval=100)
-    parser.set_defaults(ckpt_interval=100)
+    parser.set_defaults(actor_lr=1e-3)
+    parser.set_defaults(critic_lr=1e-3)
+    parser.set_defaults(evaluate_interval=10000)
+    parser.set_defaults(ckpt_interval=10000)
+    parser.set_defaults(log_interval=500)
+    parser.set_defaults(critic_soft_update_weight=0.99)
+    parser.set_defaults(buffer_size=100000)
+    parser.set_defaults(critic_ensemble=2)
 
 
 def add_ppo_arguments(parser):
@@ -225,7 +237,10 @@ def add_ppo_arguments(parser):
 
 
 def add_ddpg_arguments(parser):
-    parser.set_defaults(epsilon_greedy=True)
+    # epsilon greedy
+    parser.add_argument("--epsilon_greedy", type=str2bool, default=True)
+    parser.add_argument("--epsilon_greedy_eps", type=float, default=0.3)
+    parser.add_argument("--epsilon_greedy_noise", type=float, default=0.2)
 
 
 def add_il_arguments(parser):
@@ -254,7 +269,7 @@ def add_gail_arguments(parser):
     parser.add_argument("--gail_entropy_loss_coeff", type=float, default=0.0)
     parser.add_argument("--gail_vanilla_reward", type=str2bool, default=True)
     parser.add_argument("--discriminator_lr", type=float, default=1e-4)
-    parser.add_argument("--discriminator_mlp_dim", nargs="+", default=[256, 256])
+    parser.add_argument("--discriminator_mlp_dim", type=str2intlist, default=[256, 256])
     parser.add_argument(
         "--discriminator_activation", type=str, default="tanh", choices=["relu", "elu", "tanh"]
     )

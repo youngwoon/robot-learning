@@ -10,5 +10,7 @@ moviepy
 mpi4py
 gym
 mujoco-py
-torch
-torchvision
+#torch
+#torchvision
+git+git://github.com/deepmind/dm_control.git
+git+git://github.com/1nadequacy/dmc2gym.git

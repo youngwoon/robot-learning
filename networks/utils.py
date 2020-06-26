@@ -14,21 +14,16 @@ class CNN(nn.Module):
         w = config.encoder_image_size
         for k, s in zip(config.encoder_kernel_size, config.encoder_stride):
             self.convs.append(nn.Conv2d(d_prev, d, int(k), int(s)))
-            weight_init(self.convs[-1])
             w = int(np.floor((w - (int(k) - 1) - 1) / int(s) + 1))
             d_prev = d
-
-        # screen_width == 32 (8,4)-(3,2) -> 3x3
-        # screen_width == 64 (8,4)-(3,2)-(3,2) -> 3x3
-        # screen_width == 128 (8,4)-(3,2)-(3,2)-(3,2) -> 3x3
-        # screen_width == 256 (8,4)-(3,2)-(3,2)-(3,2) -> 7x7
 
         print("Output of CNN (%d) = %d x %d x %d" % (w * w * d, w, w, d))
         self.output_dim = config.encoder_conv_output_dim
 
         self.fc = nn.Linear(w * w * d, self.output_dim)
-        weight_init(self.fc)
         self.ln = nn.LayerNorm(self.output_dim)
+
+        self.apply(weight_init)
 
     def forward(self, ob, detach_conv=False):
         out = ob
@@ -50,21 +45,23 @@ class CNN(nn.Module):
         """Tie convolutional layers"""
         # only tie conv layers
         for i, conv in enumerate(self.convs):
-            tie_weights(src=source.convs[i], trg=conv)
+            assert type(source.convs[i]) == type(conv)
+            conv.weight = source.convs[i].weight
+            conv.bias = source.convs[i].bias
 
 
-# from https://github.com/MishaLaskin/rad/blob/b44f49e427a464494e23f13b01353e96ed67fa83/curl_sac.py#L33
+# from https://github.com/denisyarats/drq/blob/master/utils.py#L62
 def weight_init(tensor):
     if isinstance(tensor, nn.Linear):
         nn.init.orthogonal_(tensor.weight.data)
         tensor.bias.data.fill_(0.0)
-    elif isinstance(tensor, nn.Conv2d):
-        nn.init.orthogonal_(tensor.weight.data)
+    elif isinstance(tensor, nn.Conv2d) or isinstance(tensor, nn.ConvTranspose2d):
         tensor.weight.data.fill_(0.0)
         tensor.bias.data.fill_(0.0)
         mid = tensor.weight.size(2) // 2
         gain = nn.init.calculate_gain("relu")
         nn.init.orthogonal_(tensor.weight.data[:, :, mid, mid], gain)
+        # nn.init.orthogonal_(tensor.weight.data, gain)
 
 
 class MLP(nn.Module):
@@ -80,10 +77,10 @@ class MLP(nn.Module):
         prev_dim = input_dim
         for d in hid_dims + [output_dim]:
             self.fcs.append(nn.Linear(prev_dim, d))
-            weight_init(self.fcs[-1])
             prev_dim = d
 
         self.output_dim = output_dim
+        self.apply(weight_init)
 
     def forward(self, ob):
         out = ob

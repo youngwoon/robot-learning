@@ -13,6 +13,7 @@ from collections import defaultdict, OrderedDict
 import torch
 import wandb
 import h5py
+import gym
 import numpy as np
 import moviepy.editor as mpy
 from tqdm import tqdm, trange
@@ -40,6 +41,12 @@ class Trainer(object):
         self._is_rl = config.algo in RL_ALGOS
 
         # create environment
+        self._env = make_env(config.env, config)
+        ob_space = env_ob_space = self._env.observation_space
+        ac_space = self._env.action_space
+        logger.info("Observation space: " + str(ob_space))
+        logger.info("Action space: " + str(ac_space))
+
         config_eval = copy.copy(config)
         if hasattr(config_eval, "port"):
             config_eval.port += 1
@@ -47,13 +54,20 @@ class Trainer(object):
             make_env(config.env, config_eval) if self._is_chef else None
         )
 
-        self._env = make_env(config.env, config)
-        ob_space = self._env.observation_space
-        ac_space = self._env.action_space
-        logger.info("Action space: " + str(ac_space))
+        # create a new observation space after data augmentation (random crop)
+        if config.encoder_type == "cnn":
+            assert not config.ob_norm, \
+                "Turn off the observation norm (--ob_norm False) for pixel inputs"
+            ob_space = gym.spaces.Dict(spaces=dict(ob_space.spaces))
+            for k in ob_space.spaces.keys():
+                if len(ob_space.spaces[k].shape) == 3:
+                    shape = [ob_space.spaces[k].shape[0], config.encoder_image_size, config.encoder_image_size]
+                    ob_space.spaces[k] = gym.spaces.Box(
+                        low=0, high=255, shape=shape, dtype=np.uint8
+                    )
 
-        # build up networks
-        self._agent = get_agent_by_name(config.algo)(config, ob_space, ac_space)
+        # build agent and networks for algorithm
+        self._agent = get_agent_by_name(config.algo)(config, ob_space, ac_space, env_ob_space)
 
         # build rollout runner
         self._runner = RolloutRunner(config, self._env, self._env_eval, self._agent)
@@ -89,6 +103,8 @@ class Trainer(object):
         logger.warn("Save checkpoint: %s", ckpt_path)
 
         if self._agent.is_off_policy():
+            # TODO (youngwoon): support large size replay buffer (pickle
+            # supports up to 4 GB)
             replay_path = os.path.join(
                 self._config.log_dir, "replay_%08d.pkl" % ckpt_num
             )
@@ -192,8 +208,8 @@ class Trainer(object):
         elif self._config.algo == "ppo":
             runner = self._runner.run(every_steps=self._config.rollout_length)
         elif self._config.algo == "sac":
-            # runner = self._runner.run(every_steps=1)
-            runner = self._runner.run(every_episodes=1)
+            runner = self._runner.run(every_steps=1)
+            # runner = self._runner.run(every_episodes=1)
 
         st_time = time()
         st_step = step
@@ -218,9 +234,7 @@ class Trainer(object):
                 info = {}
 
             # train an agent
-            logger.info("Update networks %d", update_iter)
             _train_info = self._agent.train()
-            logger.info("Update networks done")
 
             if runner and step < config.max_ob_norm_step:
                 self._update_normalizer(rollout)
