@@ -202,7 +202,6 @@ class Trainer(object):
         # decide how many episodes or how long rollout to collect
         if self._config.algo == "bc":
             runner = None
-            assert config.warm_up_steps == 0, "No warm-up is required for BC."
         elif self._config.algo == "gail":
             runner = self._runner.run(every_steps=self._config.rollout_length)
         elif self._config.algo == "ppo":

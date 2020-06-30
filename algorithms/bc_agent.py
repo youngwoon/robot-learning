@@ -25,7 +25,7 @@ from ..utils.pytorch import (
 
 
 class BCAgent(BaseAgent):
-    def __init__(self, config, ob_space, ac_space):
+    def __init__(self, config, ob_space, ac_space, env_ob_space):
         super().__init__(config, ob_space)
 
         self._ob_space = ob_space
