@@ -142,7 +142,10 @@ class GAILAgent(BaseAgent):
         assert np.isfinite(ret).all()
 
         # update rollouts
-        rollouts["adv"] = ((adv - adv.mean()) / adv.std()).tolist()
+        if adv.std() > 1e-10:
+            rollouts["adv"] = ((adv - adv.mean()) / adv.std()).tolist()
+        else:
+            rollouts["adv"] = adv.tolist()
         rollouts["ret"] = ret.tolist()
 
     def state_dict(self):

@@ -69,7 +69,8 @@ class Actor(nn.Module):
             if isinstance(v, gym.spaces.Box): # and self._gaussian:
                 mean, log_std = self.fcs[k](out).chunk(2, dim=-1)
                 log_std_min, log_std_max = -10, 2
-                log_std = -log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
+                log_std = torch.tanh(log_std)
+                log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
                 std = log_std.exp()
             else:
                 mean, std = self.fcs[k](out), None
