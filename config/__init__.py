@@ -75,8 +75,11 @@ def add_method_arguments(parser):
     )
 
     # environment
-    parser.add_argument("--screen_width", type=int, default=480)
-    parser.add_argument("--screen_height", type=int, default=480)
+    try:
+        parser.add_argument("--screen_width", type=int, default=480)
+        parser.add_argument("--screen_height", type=int, default=480)
+    except:
+        pass
     parser.add_argument("--action_repeat", type=int, default=1)
 
     # misc
@@ -98,7 +101,10 @@ def add_method_arguments(parser):
     parser.add_argument("--wandb_project", type=str, default="sim2real")
     parser.add_argument("--record_video", type=str2bool, default=True)
     parser.add_argument("--record_video_caption", type=str2bool, default=True)
-    parser.add_argument("--record_demo", type=str2bool, default=False)
+    try:
+        parser.add_argument("--record_demo", type=str2bool, default=False)
+    except:
+        pass
 
     # observation normalization
     parser.add_argument("--ob_norm", type=str2bool, default=True)
