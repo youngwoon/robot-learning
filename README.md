@@ -36,14 +36,14 @@
 # download mujoco 2.0
 $ wget https://www.roboti.us/download/mujoco200_linux.zip -O mujoco.zip
 $ unzip mujoco.zip -d ~/.mujoco
-$ mv ~/.mujoco/mujoco200_linux ~/.mujoco/mujoco200
+$ cp -r ~/.mujoco/mujoco200_linux ~/.mujoco/mujoco200
 
 # copy mujoco license key `mjkey.txt` to `~/.mujoco`
 
 # add mujoco to LD_LIBRARY_PATH
 $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
 
-# for GPU rendering (replace 418 with your nvidia driver version)
+# for GPU rendering (replace 418 with your nvidia driver version or you can make a dummy directory /usr/lib/nvidia-000)
 $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-418
 
 # only for a headless server
@@ -52,7 +52,7 @@ $ export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so:/usr/lib/nvidia-418/lib
 
 2. Install python dependencies
 ```bash
-$ sudo apt-get install libgl1-mesa-dev libgl1-mesa-glx libosmesa6-dev patchelf libopenmpi-dev libglew-dev python3-pip python3-numpy python3-scipy
+$ sudo apt-get install libgl1-mesa-dev libgl1-mesa-glx libosmesa6-dev patchelf libopenmpi-dev libglew-dev python3-pip
 
 $ pip install -r requirements.txt
 ```
