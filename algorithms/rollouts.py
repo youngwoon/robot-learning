@@ -114,7 +114,9 @@ class RolloutRunner(object):
 
                 # replace reward
                 if il:
-                    reward_rl = (1 - self._config.gail_env_reward) * reward_il + self._config.gail_env_reward * reward
+                    reward_rl = (
+                        1 - self._config.gail_env_reward
+                    ) * reward_il + self._config.gail_env_reward * reward
                 else:
                     reward_rl = reward
 
@@ -144,7 +146,7 @@ class RolloutRunner(object):
                 reward_info_dict.update({"rew_il": ep_rew_il})
 
             logger.info(
-                log_prefix+" rollout: %s",
+                log_prefix + " rollout: %s",
                 {
                     k: v
                     for k, v in reward_info_dict.items()
@@ -206,7 +208,9 @@ class RolloutRunner(object):
 
             # replace reward
             if il:
-                reward_rl = (1 - self._config.gail_env_reward) * reward_il + self._config.gail_env_reward * reward
+                reward_rl = (
+                    1 - self._config.gail_env_reward
+                ) * reward_il + self._config.gail_env_reward * reward
             else:
                 reward_rl = reward
 
@@ -222,7 +226,11 @@ class RolloutRunner(object):
                 frame_info = info.copy()
                 if il:
                     frame_info.update(
-                        {"ep_rew_il": ep_rew_il, "rew_il": reward_il, "rew_rl": reward_rl}
+                        {
+                            "ep_rew_il": ep_rew_il,
+                            "rew_il": reward_il,
+                            "rew_rl": reward_rl,
+                        }
                     )
                 self._store_frame(env, ep_len, ep_rew, frame_info)
 

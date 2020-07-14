@@ -37,9 +37,7 @@ class BCAgent(BaseAgent):
         self._network_cuda(config.device)
         self._actor_optim = optim.Adam(self._actor.parameters(), lr=config.bc_lr)
         self._actor_lr_scheduler = StepLR(
-            self._actor_optim,
-            step_size=self._config.max_global_step // 5,
-            gamma=0.5,
+            self._actor_optim, step_size=self._config.max_global_step // 5, gamma=0.5,
         )
 
         self._dataset = ExpertDataset(config.demo_path, config.demo_subsample_interval)
@@ -47,17 +45,20 @@ class BCAgent(BaseAgent):
         if self._config.val_split != 0:
             dataset_size = len(self._dataset)
             indices = list(range(dataset_size))
-            split = int(np.floor((1-self._config.val_split) * dataset_size))
+            split = int(np.floor((1 - self._config.val_split) * dataset_size))
             train_indices, val_indices = indices[split:], indices[:split]
             train_sampler = SubsetRandomSampler(train_indices)
             val_sampler = SubsetRandomSampler(val_indices)
             self._train_loader = torch.utils.data.DataLoader(
-                self._dataset, batch_size=self._config.batch_size, sampler=train_sampler)
+                self._dataset, batch_size=self._config.batch_size, sampler=train_sampler
+            )
             self._val_loader = torch.utils.data.DataLoader(
-                self._dataset, batch_size=self._config.batch_size, sampler=val_sampler)
+                self._dataset, batch_size=self._config.batch_size, sampler=val_sampler
+            )
         else:
             self._train_loader = torch.utils.data.DataLoader(
-                self._dataset, batch_size=self._config.batch_size, shuffle=True)
+                self._dataset, batch_size=self._config.batch_size, shuffle=True
+            )
 
         self._log_creation()
 
@@ -141,14 +142,14 @@ class BCAgent(BaseAgent):
                 pred_ac = [x.unsqueeze(0) for x in pred_ac]
             pred_ac = torch.cat(pred_ac, dim=-1)
 
-        diff = (ac - pred_ac)
+        diff = ac - pred_ac
         actor_loss = diff.pow(2).mean()
         info["actor_loss"] = actor_loss.cpu().item()
         info["pred_ac"] = pred_ac.cpu().detach()
         info["GT_ac"] = ac.cpu()
         diff = torch.sum(torch.abs(diff), axis=0).cpu()
         for i in range(diff.shape[0]):
-            info['action'+ str(i) + '_L1loss'] = diff[i].mean().item()
+            info["action" + str(i) + "_L1loss"] = diff[i].mean().item()
 
         if train:
             # update the actor

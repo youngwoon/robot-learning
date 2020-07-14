@@ -72,7 +72,9 @@ class BaseAgent(object):
 
     def _soft_update_target_network(self, target, source, tau):
         for target_param, source_param in zip(target.parameters(), source.parameters()):
-            target_param.data.copy_((1 - tau) * source_param.data + tau * target_param.data)
+            target_param.data.copy_(
+                (1 - tau) * source_param.data + tau * target_param.data
+            )
 
     def _copy_target_network(self, target, source):
         self._soft_update_target_network(target, source, 0)

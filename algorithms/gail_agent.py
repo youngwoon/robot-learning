@@ -38,7 +38,9 @@ class GAILAgent(BaseAgent):
         self._actor = Actor(config, ob_space, ac_space, config.tanh_policy)
         self._old_actor = Actor(config, ob_space, ac_space, config.tanh_policy)
         self._critic = Critic(config, ob_space)
-        self._discriminator = Discriminator(config, ob_space, ac_space if not config.gail_no_action else None)
+        self._discriminator = Discriminator(
+            config, ob_space, ac_space if not config.gail_no_action else None
+        )
         self._discriminator_loss = nn.BCEWithLogitsLoss()
         self._network_cuda(config.device)
 
@@ -132,7 +134,9 @@ class GAILAgent(BaseAgent):
             ob = obs2tensor(ob, self._config.device)
             ac = obs2tensor(rollouts["ac"], self._config.device)
             rew_il = self._predict_reward(ob, ac).cpu().numpy().squeeze()
-            rew = (1 - self._config.gail_env_reward) * rew_il[:T] + self._config.gail_env_reward * np.array(rew)
+            rew = (1 - self._config.gail_env_reward) * rew_il[
+                :T
+            ] + self._config.gail_env_reward * np.array(rew)
             assert rew.shape == (T,)
 
         adv = np.empty((T,), "float32")
@@ -221,14 +225,22 @@ class GAILAgent(BaseAgent):
         self._copy_target_network(self._old_actor, self._actor)
 
         batch_size = self._config.batch_size
-        num_batches = self._config.ppo_epoch * self._config.rollout_length // self._config.batch_size
+        num_batches = (
+            self._config.ppo_epoch
+            * self._config.rollout_length
+            // self._config.batch_size
+        )
         assert num_batches > 0
         for _ in range(num_batches):
             policy_data = self._buffer.sample(batch_size)
             _train_info = self._update_policy(policy_data)
             train_info.add(_train_info)
 
-        num_batches = self._config.rollout_length // self._config.batch_size // self._config.discriminator_update_freq
+        num_batches = (
+            self._config.rollout_length
+            // self._config.batch_size
+            // self._config.discriminator_update_freq
+        )
         assert num_batches > 0
         for _ in range(num_batches):
             policy_data = self._buffer.sample(batch_size)
@@ -329,7 +341,9 @@ class GAILAgent(BaseAgent):
         adv = _to_tensor(transitions["adv"]).reshape(bs, 1)
 
         _, _, log_pi, ent = self._actor.act(o, activations=a_z, return_log_prob=True)
-        _, _, old_log_pi, _ = self._old_actor.act(o, activations=a_z, return_log_prob=True)
+        _, _, old_log_pi, _ = self._old_actor.act(
+            o, activations=a_z, return_log_prob=True
+        )
         if old_log_pi.min() < -100:
             logger.error("sampling an action with a probability of 1e-100")
             import ipdb
@@ -341,9 +355,7 @@ class GAILAgent(BaseAgent):
         ratio = torch.exp(log_pi - old_log_pi)
         surr1 = ratio * adv
         surr2 = (
-            torch.clamp(
-                ratio, 1.0 - self._config.ppo_clip, 1.0 + self._config.ppo_clip
-            )
+            torch.clamp(ratio, 1.0 - self._config.ppo_clip, 1.0 + self._config.ppo_clip)
             * adv
         )
         actor_loss = -torch.min(surr1, surr2).mean()

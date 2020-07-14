@@ -85,11 +85,7 @@ class ReplayBufferPerStep(object):
         return batch
 
     def state_dict(self):
-        return {
-            "buffer": self._buffer,
-            "idx": self._idx,
-            "full": self._full
-        }
+        return {"buffer": self._buffer, "idx": self._idx, "full": self._full}
 
     def load_state_dict(self, state_dict):
         self._buffer = state_dict["buffer"]

@@ -61,7 +61,9 @@ class DDPGAgent(BaseAgent):
                 if np.random.uniform() < self._config.epsilon_greedy_eps:
                     ac[k] = v.sample()
                 elif isinstance(v, gym.spaces.Box):
-                    ac[k] += self._config.epsilon_greedy_noise * np.random.randn(*ac[k].shape)
+                    ac[k] += self._config.epsilon_greedy_noise * np.random.randn(
+                        *ac[k].shape
+                    )
                     ac[k] = np.clip(ac[k], v.low, v.high)
 
         return ac, activation

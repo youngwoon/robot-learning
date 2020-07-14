@@ -156,7 +156,11 @@ class PPOAgent(BaseAgent):
 
         self._copy_target_network(self._old_actor, self._actor)
 
-        num_batches = self._config.ppo_epoch * self._config.rollout_length // self._config.batch_size
+        num_batches = (
+            self._config.ppo_epoch
+            * self._config.rollout_length
+            // self._config.batch_size
+        )
         for _ in range(num_batches):
             transitions = self._buffer.sample(self._config.batch_size)
             _train_info = self._update_network(transitions)
@@ -190,7 +194,9 @@ class PPOAgent(BaseAgent):
         adv = _to_tensor(transitions["adv"]).reshape(bs, 1)
 
         _, _, log_pi, ent = self._actor.act(o, activations=a_z, return_log_prob=True)
-        _, _, old_log_pi, _ = self._old_actor.act(o, activations=a_z, return_log_prob=True)
+        _, _, old_log_pi, _ = self._old_actor.act(
+            o, activations=a_z, return_log_prob=True
+        )
         if old_log_pi.min() < -100:
             logger.error("sampling an action with a probability of 1e-100")
             import ipdb
@@ -202,9 +208,7 @@ class PPOAgent(BaseAgent):
         ratio = torch.exp(log_pi - old_log_pi)
         surr1 = ratio * adv
         surr2 = (
-            torch.clamp(
-                ratio, 1.0 - self._config.ppo_clip, 1.0 + self._config.ppo_clip
-            )
+            torch.clamp(ratio, 1.0 - self._config.ppo_clip, 1.0 + self._config.ppo_clip)
             * adv
         )
         actor_loss = -torch.min(surr1, surr2).mean()
@@ -240,7 +244,9 @@ class PPOAgent(BaseAgent):
         # update the critic
         self._critic_optim.zero_grad()
         value_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self._critic.parameters(), self._config.max_grad_norm)
+        torch.nn.utils.clip_grad_norm_(
+            self._critic.parameters(), self._config.max_grad_norm
+        )
         sync_grads(self._critic)
         self._critic_optim.step()
 

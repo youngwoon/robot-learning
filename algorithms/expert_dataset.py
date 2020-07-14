@@ -13,7 +13,13 @@ class ExpertDataset(Dataset):
     """ Dataset class for Imitation Learning. """
 
     def __init__(
-        self, path, subsample_interval=1, train=True, transform=None, target_transform=None, download=False
+        self,
+        path,
+        subsample_interval=1,
+        train=True,
+        transform=None,
+        target_transform=None,
+        download=False,
     ):
         self.train = train  # training set or test set
 
@@ -33,9 +39,10 @@ class ExpertDataset(Dataset):
                     demos = [demos]
 
                 for demo in demos:
-                    assert len(demo["obs"]) == len(demo["actions"]) + 1, \
-                        "# observations (%d) should be # actions (%d) + 1" % \
-                        (len(demo["obs"]), len(demo["actions"]))
+                    assert len(demo["obs"]) == len(demo["actions"]) + 1, (
+                        "# observations (%d) should be # actions (%d) + 1"
+                        % (len(demo["obs"]), len(demo["actions"]))
+                    )
 
                     offset = np.random.randint(0, subsample_interval)
                     length = len(demo["actions"])

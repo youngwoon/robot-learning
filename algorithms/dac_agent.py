@@ -37,13 +37,17 @@ class DACAgent(BaseAgent):
 
         self._target_entropy = -gym.spaces.flatdim(ac_space)
         self._log_alpha = torch.tensor(
-            np.log(config.alpha_init_temperature), requires_grad=True, device=config.device
+            np.log(config.alpha_init_temperature),
+            requires_grad=True,
+            device=config.device,
         )
 
         # build up networks
         self._actor = Actor(config, ob_space, ac_space, config.tanh_policy)
         self._critic = Critic(config, ob_space, ac_space)
-        self._discriminator = Discriminator(config, ob_space, ac_space if not config.gail_no_action else None)
+        self._discriminator = Discriminator(
+            config, ob_space, ac_space if not config.gail_no_action else None
+        )
         self._discriminator_loss = nn.BCEWithLogitsLoss()
 
         # build up target networks
@@ -118,15 +122,18 @@ class DACAgent(BaseAgent):
         if self._config.is_chef:
             logger.info("Creating a DAC agent")
             logger.info("The actor has %d parameters", count_parameters(self._actor))
+            logger.info("The critic has %d parameters", count_parameters(self._critic))
             logger.info(
-                "The critic has %d parameters", count_parameters(self._critic)
-            )
-            logger.info(
-                "The discriminator has %d parameters", count_parameters(self._discriminator)
+                "The discriminator has %d parameters",
+                count_parameters(self._discriminator),
             )
 
     def store_episode(self, rollouts):
-        self._num_updates = mpi_sum(len(rollouts["ac"])) // self._config.num_workers // self._config.actor_update_freq
+        self._num_updates = (
+            mpi_sum(len(rollouts["ac"]))
+            // self._config.num_workers
+            // self._config.actor_update_freq
+        )
         self._buffer.store_episode(rollouts)
 
     def state_dict(self):
@@ -278,14 +285,14 @@ class DACAgent(BaseAgent):
     def _update_actor_and_alpha(self, o):
         info = Info()
 
-        actions_real, _, log_pi, _ = self._actor.act(o, return_log_prob=True, detach_conv=True)
+        actions_real, _, log_pi, _ = self._actor.act(
+            o, return_log_prob=True, detach_conv=True
+        )
         alpha = self._log_alpha.exp()
 
         # the actor loss
         entropy_loss = (alpha.detach() * log_pi).mean()
-        actor_loss = -torch.min(
-            *self._critic(o, actions_real, detach_conv=True)
-        ).mean()
+        actor_loss = -torch.min(*self._critic(o, actions_real, detach_conv=True)).mean()
         info["entropy_alpha"] = alpha.cpu().item()
         info["entropy_loss"] = entropy_loss.cpu().item()
         info["actor_loss"] = actor_loss.cpu().item()
@@ -298,9 +305,7 @@ class DACAgent(BaseAgent):
         self._actor_optim.step()
 
         # update alpha
-        alpha_loss = -(
-            alpha * (log_pi + self._target_entropy).detach()
-        ).mean()
+        alpha_loss = -(alpha * (log_pi + self._target_entropy).detach()).mean()
         self._alpha_optim.zero_grad()
         alpha_loss.backward()
         self._alpha_optim.step()
@@ -313,7 +318,9 @@ class DACAgent(BaseAgent):
         # calculate the target Q value function
         with torch.no_grad():
             alpha = self._log_alpha.exp().detach()
-            actions_next, _, log_pi_next, _ = self._actor.act(o_next, return_log_prob=True)
+            actions_next, _, log_pi_next, _ = self._actor.act(
+                o_next, return_log_prob=True
+            )
             q_next_value1, q_next_value2 = self._critic_target(o_next, actions_next)
             q_next_value = torch.min(q_next_value1, q_next_value2) - alpha * log_pi_next
             target_q_value = (
@@ -360,7 +367,9 @@ class DACAgent(BaseAgent):
         done = _to_tensor(transitions["done"]).reshape(bs, 1).float()
         rew_env = _to_tensor(transitions["rew"]).reshape(bs, 1)
         rew_il = self._predict_reward(o, ac)
-        rew = (1 - self._config.gail_env_reward) * rew_il + self._config.gail_env_reward * rew_env
+        rew = (
+            1 - self._config.gail_env_reward
+        ) * rew_il + self._config.gail_env_reward * rew_env
 
         self._update_iter += 1
 
@@ -374,10 +383,14 @@ class DACAgent(BaseAgent):
         if self._update_iter % self._config.critic_target_update_freq == 0:
             for i, fc in enumerate(self._critic.fcs):
                 self._soft_update_target_network(
-                    self._critic_target.fcs[i], fc, self._config.critic_soft_update_weight
+                    self._critic_target.fcs[i],
+                    fc,
+                    self._config.critic_soft_update_weight,
                 )
             self._soft_update_target_network(
-                self._critic_target.encoder, self._critic.encoder, self._config.encoder_soft_update_weight
+                self._critic_target.encoder,
+                self._critic.encoder,
+                self._config.encoder_soft_update_weight,
             )
 
         return info.get_dict(only_scalar=True)
