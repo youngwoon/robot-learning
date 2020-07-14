@@ -58,7 +58,7 @@ class RolloutRunner(object):
         self._env_eval = env_eval
         self._pi = pi
 
-    def run(self, is_train=True, every_steps=None, every_episodes=None):
+    def run(self, is_train=True, every_steps=None, every_episodes=None, log_prefix=""):
         """
         Collects trajectories and yield every @every_steps/@every_episodes.
 
@@ -66,6 +66,7 @@ class RolloutRunner(object):
             is_train: whether rollout is for training or evaluation.
             every_steps: if not None, returns rollouts @every_steps
             every_episodes: if not None, returns rollouts @every_epiosdes
+            log_prefix: log as @log_prefix rollout: %s
         """
         if every_steps is None and every_episodes is None:
             raise ValueError("Both every_steps and every_episodes cannot be None")
@@ -143,7 +144,7 @@ class RolloutRunner(object):
                 reward_info_dict.update({"rew_il": ep_rew_il})
 
             logger.info(
-                "rollout: %s",
+                log_prefix+" rollout: %s",
                 {
                     k: v
                     for k, v in reward_info_dict.items()
