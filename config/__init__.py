@@ -57,6 +57,7 @@ def add_method_arguments(parser):
             "ddpg",
             "bc",
             "gail",
+            "dac",
         ],
     )
 
@@ -150,6 +151,13 @@ def add_method_arguments(parser):
         add_ppo_arguments(parser)
         add_gail_arguments(parser)
 
+    elif args.algo in ["dac"]:
+        add_il_arguments(parser)
+        add_rl_arguments(parser)
+        add_off_policy_arguments(parser)
+        add_sac_arguments(parser)
+        add_gail_arguments(parser)
+
     return parser
 
 
@@ -191,6 +199,9 @@ def add_policy_arguments(parser):
         "--critic_soft_update_weight", type=float, default=0.995, help="the average coefficient"
     )
 
+    # absorbing state
+    parser.add_argument("--absorbing_state", type=str2bool, default=False)
+
 
 def add_rl_arguments(parser):
     parser.add_argument(
@@ -222,7 +233,7 @@ def add_sac_arguments(parser):
     )
     parser.set_defaults(actor_lr=1e-3)
     parser.set_defaults(critic_lr=1e-3)
-    parser.set_defaults(evaluate_interval=10000)
+    parser.set_defaults(evaluate_interval=5000)
     parser.set_defaults(ckpt_interval=10000)
     parser.set_defaults(log_interval=500)
     parser.set_defaults(critic_soft_update_weight=0.99)
@@ -262,7 +273,7 @@ def add_il_arguments(parser):
 
 def add_bc_arguments(parser):
     parser.set_defaults(gaussian_policy=False)
-    parser.set_defaults(max_global_step=20)
+    parser.set_defaults(max_global_step=100)
     parser.add_argument(
         "--bc_lr", type=float, default=1e-3, help="learning rate for bc"
     )
@@ -282,6 +293,10 @@ def add_gail_arguments(parser):
     parser.add_argument("--discriminator_update_freq", type=int, default=4)
     parser.add_argument("--gail_no_action", type=str2bool, default=False)
     parser.add_argument("--gail_env_reward", type=float, default=0.0)
+
+
+def add_dac_arguments(parser):
+    parser.add_argument("--dac_rl_algo", type=str, default="sac", choices=["sac", "td3"])
 
 
 def argparser():

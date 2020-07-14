@@ -66,6 +66,16 @@ class Trainer(object):
                         low=0, high=255, shape=shape, dtype=np.uint8
                     )
 
+        # TODO (youngwoon): need to implement absorbing state for DAC
+        if config.absorbing_state:
+            ob_space = gym.spaces.Dict(spaces=dict(ob_space.spaces))
+            for k in ob_space.spaces.keys():
+                if len(ob_space.spaces[k].shape) == 3:
+                    shape = [ob_space.spaces[k].shape[0], config.encoder_image_size, config.encoder_image_size]
+                    ob_space.spaces[k] = gym.spaces.Box(
+                        low=0, high=255, shape=shape, dtype=np.uint8
+                    )
+
         # build agent and networks for algorithm
         self._agent = get_agent_by_name(config.algo)(config, ob_space, ac_space, env_ob_space)
 
@@ -209,6 +219,8 @@ class Trainer(object):
         elif self._config.algo == "sac":
             runner = self._runner.run(every_steps=1)
             # runner = self._runner.run(every_episodes=1)
+        elif self._config.algo == "dac":
+            runner = self._runner.run(every_steps=1)
 
         st_time = time()
         st_step = step

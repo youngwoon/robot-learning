@@ -70,6 +70,7 @@ def get_gym_env(env_id, config):
         try:
             env = gym.make(env_id, **env_kwargs)
         except:
+            logger.warn("Failed to launch an env with config")
             env = gym.make(env_id)
         env.seed(config.seed)
         env = GymWrapper(

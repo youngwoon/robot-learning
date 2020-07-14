@@ -117,7 +117,7 @@ class RolloutRunner(object):
                 else:
                     reward_rl = reward
 
-                rollout.add({"done": done, "rew": reward_rl})
+                rollout.add({"done": done, "rew": reward})
                 step += 1
                 ep_len += 1
                 ep_rew += reward
@@ -209,7 +209,7 @@ class RolloutRunner(object):
             else:
                 reward_rl = reward
 
-            rollout.add({"done": done, "rew": reward_rl})
+            rollout.add({"done": done, "rew": reward})
             ep_len += 1
             ep_rew += reward
             ep_rew_rl += reward_rl

@@ -62,7 +62,7 @@ class ExpertDataset(Dataset):
 
     def _get_demo_files(self, demo_file_path):
         demos = []
-        for f in glob.glob(demo_file_path + "*"):
+        for f in glob.glob(demo_file_path + "*.pkl"):
             if os.path.isfile(f):
                 demos.append(f)
         return demos
