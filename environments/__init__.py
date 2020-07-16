@@ -69,8 +69,10 @@ def get_gym_env(env_id, config):
         env_kwargs = config.__dict__.copy()
         try:
             env = gym.make(env_id, **env_kwargs)
-        except:
-            logger.warn("Failed to launch an env with config")
+        except Exception as e:
+            logger.warn("Failed to launch an environment with config.")
+            logger.warn(e)
+            logger.warn("Launch an environment without config.")
             env = gym.make(env_id)
         env.seed(config.seed)
         env = GymWrapper(
