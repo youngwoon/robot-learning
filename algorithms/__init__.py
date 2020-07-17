@@ -13,6 +13,7 @@ RL_ALGOS = {
     "sac": SACAgent,
     "ppo": PPOAgent,
     "ddpg": DDPGAgent,
+    "td3": DDPGAgent,
 }
 
 

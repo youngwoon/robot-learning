@@ -156,6 +156,7 @@ class SACAgent(BaseAgent):
             _train_info = self._update_network(transitions)
             train_info.add(_train_info)
 
+        # slow!
         # train_info.add(
         #    {
         #        "actor_grad_norm": compute_gradient_norm(self._actor),

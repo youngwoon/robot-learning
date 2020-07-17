@@ -55,6 +55,7 @@ def add_method_arguments(parser):
             "sac",
             "ppo",
             "ddpg",
+            "td3",
             "bc",
             "gail",
             "dac",
@@ -120,8 +121,6 @@ def add_method_arguments(parser):
         help="the clip range after normalization of observation",
     )
 
-    args, unparsed = parser.parse_known_args()
-
     parser.add_argument("--max_global_step", type=int, default=int(1e6))
     parser.add_argument(
         "--batch_size", type=int, default=128, help="the sample batch size"
@@ -129,34 +128,33 @@ def add_method_arguments(parser):
 
     add_policy_arguments(parser)
 
+    # arguments specific to algorithms
+    args, unparsed = parser.parse_known_args()
     if args.algo == "sac":
-        add_rl_arguments(parser)
-        add_off_policy_arguments(parser)
         add_sac_arguments(parser)
+
     elif args.algo == "ddpg":
-        add_rl_arguments(parser)
-        add_off_policy_arguments(parser)
         add_ddpg_arguments(parser)
+
+    elif args.algo == "td3":
+        add_td3_arguments(parser)
+
     elif args.algo == "ppo":
-        add_rl_arguments(parser)
-        add_on_policy_arguments(parser)
         add_ppo_arguments(parser)
+
     elif args.algo == "bc":
         add_il_arguments(parser)
         add_bc_arguments(parser)
+
     elif args.algo in ["gail", "gaifo", "gaifo-s"]:
         add_il_arguments(parser)
-        add_rl_arguments(parser)
-        add_on_policy_arguments(parser)
         add_ppo_arguments(parser)
         add_gail_arguments(parser)
 
     elif args.algo in ["dac"]:
         add_il_arguments(parser)
-        add_rl_arguments(parser)
-        add_off_policy_arguments(parser)
-        add_sac_arguments(parser)
         add_gail_arguments(parser)
+        add_dac_arguments(parser)
 
     return parser
 
@@ -224,6 +222,9 @@ def add_off_policy_arguments(parser):
 
 
 def add_sac_arguments(parser):
+    add_rl_arguments(parser)
+    add_off_policy_arguments(parser)
+
     parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
     parser.add_argument("--actor_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
@@ -242,6 +243,9 @@ def add_sac_arguments(parser):
 
 
 def add_ppo_arguments(parser):
+    add_rl_arguments(parser)
+    add_on_policy_arguments(parser)
+
     parser.add_argument("--ppo_clip", type=float, default=0.2)
     parser.add_argument("--value_loss_coeff", type=float, default=0.5)
     parser.add_argument("--action_loss_coeff", type=float, default=1.0)
@@ -249,15 +253,42 @@ def add_ppo_arguments(parser):
 
     parser.add_argument("--ppo_epoch", type=int, default=5)
     parser.add_argument("--max_grad_norm", type=float, default=100)
+    parser.set_defaults(critic_soft_update_weight=0.995)
     parser.set_defaults(evaluate_interval=20)
     parser.set_defaults(ckpt_interval=20)
 
 
 def add_ddpg_arguments(parser):
+    add_rl_arguments(parser)
+    add_off_policy_arguments(parser)
+
+    parser.add_argument("--actor_update_freq", type=int, default=2)
+    parser.add_argument("--actor_target_update_freq", type=int, default=2)
+    parser.add_argument("--critic_target_update_freq", type=int, default=2)
+    parser.add_argument(
+        "--actor_soft_update_weight", type=float, default=0.995, help="the average coefficient"
+    )
+    parser.set_defaults(critic_soft_update_weight=0.995)
+
     # epsilon greedy
-    parser.add_argument("--epsilon_greedy", type=str2bool, default=True)
+    parser.add_argument("--epsilon_greedy", type=str2bool, default=False)
     parser.add_argument("--epsilon_greedy_eps", type=float, default=0.3)
-    parser.add_argument("--epsilon_greedy_noise", type=float, default=0.2)
+    parser.add_argument("--policy_exploration_noise", type=float, default=0.1)
+
+    parser.set_defaults(gaussian_policy=False)
+
+    parser.set_defaults(evaluate_interval=5000)
+    parser.set_defaults(ckpt_interval=10000)
+    parser.set_defaults(log_interval=500)
+
+
+def add_td3_arguments(parser):
+    add_ddpg_arguments(parser)
+
+    parser.set_defaults(critic_ensemble=2)
+
+    parser.add_argument("--policy_noise", type=float, default=0.2)
+    parser.add_argument("--policy_noise_clip", type=float, default=0.5)
 
 
 def add_il_arguments(parser):
@@ -296,7 +327,15 @@ def add_gail_arguments(parser):
 
 
 def add_dac_arguments(parser):
-    parser.add_argument("--dac_rl_algo", type=str, default="sac", choices=["sac", "td3"])
+    parser.add_argument("--dac_rl_algo", type=str, default="td3", choices=["sac", "td3"])
+
+    args, unparsed = parser.parse_known_args()
+
+    if args.dac_rl_algo == "sac":
+        add_sac_arguments(parser)
+
+    elif args.dac_rl_algo == "td3":
+        add_td3_arguments(parser)
 
 
 def argparser():
