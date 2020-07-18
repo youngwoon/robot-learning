@@ -35,6 +35,7 @@ class Rollout(object):
         batch["ac"] = self._history["ac"]
         batch["ac_before_activation"] = self._history["ac_before_activation"]
         batch["done"] = self._history["done"]
+        batch["done_mask"] = self._history["done_mask"]
         batch["rew"] = self._history["rew"]
         self._history = defaultdict(list)
         return batch
@@ -58,7 +59,14 @@ class RolloutRunner(object):
         self._env_eval = env_eval
         self._pi = pi
 
-    def run(self, is_train=True, every_steps=None, every_episodes=None, log_prefix=""):
+    def run(
+        self,
+        is_train=True,
+        every_steps=None,
+        every_episodes=None,
+        log_prefix="",
+        step=0,
+    ):
         """
         Collects trajectories and yield every @every_steps/@every_episodes.
 
@@ -81,7 +89,6 @@ class RolloutRunner(object):
         rollout = Rollout()
         reward_info = Info()
         ep_info = Info()
-        step = 0
         episode = 0
 
         while True:
@@ -127,6 +134,9 @@ class RolloutRunner(object):
                 ep_rew_rl += reward_rl
                 if il:
                     ep_rew_il += reward_il
+
+                done_mask = float(done) if ep_len < env.max_episode_steps else 0.0
+                rollout.add({"done_mask": done_mask})
 
                 reward_info.add(info)
 
