@@ -4,12 +4,14 @@
 ## RL algorithms
 * PPO
 * DDPG
+* TD3
 * SAC
 
 
 ## IL algorithms
 * BC
 * GAIL
+* DAC
 
 
 ## Directories
@@ -52,7 +54,13 @@ $ export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so:/usr/lib/nvidia-418/lib
 
 2. Install python dependencies
 ```bash
-$ sudo apt-get install libgl1-mesa-dev libgl1-mesa-glx libosmesa6-dev patchelf libopenmpi-dev libglew-dev python3-pip
+$ sudo apt-get install cmake libopenmpi-dev libgl1-mesa-dev libgl1-mesa-glx libosmesa6-dev patchelf libglew-dev
+
+# software rendering
+$ sudo apt-get install libgl1-mesa-glx libosmesa6 patchelf
+
+# window rendering
+$ sudo apt-get install libglfw3 libglew2.0
 
 $ pip install -r requirements.txt
 ```
@@ -68,6 +76,11 @@ $ python -m run --run_prefix test --algo ppo --env "Hopper-v2"
 ### DDPG
 ```bash
 $ python -m run --run_prefix test --algo ddpg --env "Hopper-v2"
+```
+
+### TD3
+```bash
+$ python -m run --run_prefix test --algo td3 --env "Hopper-v2"
 ```
 
 ### SAC
@@ -100,13 +113,8 @@ $ python -m run --run_prefix test --algo gail --env "Hopper-v2" --demo_path log/
 
 
 ## To dos
-* DAC
 * BC intialization for all algorithms
-* RAD/DrQ
 * Ray
-* dm_control2gym
-* IKEA Furniture Assembly Environment integration
-* GAIL with SAC
 * HER
 * Skill coordination
 
