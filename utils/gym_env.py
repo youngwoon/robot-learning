@@ -44,6 +44,7 @@ class GymWrapper(gym.Wrapper):
         self._camera_id = camera_id
         self._channels_first = channels_first
         self._frame_skip = frame_skip
+        self.max_episode_steps = self.env._max_episode_steps // frame_skip
 
         if from_pixels:
             shape = [3, height, width] if channels_first else [height, width, 3]
