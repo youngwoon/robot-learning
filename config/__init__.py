@@ -100,7 +100,7 @@ def add_method_arguments(parser):
         help="set it True if you want to use wandb",
     )
     parser.add_argument("--wandb_entity", type=str, default="clvr")
-    parser.add_argument("--wandb_project", type=str, default="sim2real")
+    parser.add_argument("--wandb_project", type=str, default="robot-learning")
     parser.add_argument("--record_video", type=str2bool, default=True)
     parser.add_argument("--record_video_caption", type=str2bool, default=True)
     try:
