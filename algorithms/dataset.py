@@ -49,12 +49,17 @@ def augment_ob(batch, image_crop_size):
 
 
 class ReplayBufferPerStep(object):
-    def __init__(self, shapes: dict, buffer_size: int, image_crop_size=84):
+    def __init__(self, shapes: dict, buffer_size: int, image_crop_size=84, absorbing_state=False):
         self._capacity = buffer_size
+
+        if absorbin_state:
+            shapes["ob"]["absorbing_state"] = [1]
+            shapes["ob_next"]["absorbing_state"] = [1]
 
         self._shapes = shapes
         self._keys = list(shapes.keys())
         self._image_crop_size = image_crop_size
+        self._absorbing_state = absorbing_state
 
         self._buffer = make_buffer(shapes, buffer_size)
         self._idx = 0

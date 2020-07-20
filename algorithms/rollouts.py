@@ -168,6 +168,7 @@ class RolloutRunner(object):
             if every_episodes is not None and episode % every_episodes == 0:
                 # last frame
                 rollout.add({"ob": ob})
+                # (TODO) add absorbing state + change to episode based rollout
                 yield rollout.get(), ep_info.get_dict(only_scalar=True)
 
     def run_episode(self, max_step=10000, is_train=True, record_video=False):

@@ -17,13 +17,34 @@ def stacked_space(space, k):
 
 def spaces_to_shapes(space):
     if isinstance(space, gym.spaces.Dict):
-        return {
-            k: spaces_to_shapes(v) for k, v in space.spaces.items()
-        }
+        return {k: spaces_to_shapes(v) for k, v in space.spaces.items()}
     elif isinstance(space, gym.spaces.Box):
         return space.shape
     elif isinstance(space, gym.spaces.Discrete):
         return [space.n]
+
+
+def zero_value(space):
+    if isinstance(space, gym.spaces.Dict):
+        return OrderedDict(
+            [(k, zero_value(space)) for k, space in space.spaces.items()]
+        )
+    elif isinstance(space, gym.spaces.Box):
+        return np.zeros(space.shape)
+    elif isinstance(space, gym.spaces.Discrete):
+        return np.zeros(1)
+
+
+def get_non_absorbing_state(ob):
+    ob = ob.copy()
+    ob["absorbing_state"] = -1
+    return ob
+
+
+def get_absorbing_state(space):
+    ob = zero_value(space)
+    ob["absorbing_state"] = 1
+    return ob
 
 
 class GymWrapper(gym.Wrapper):
@@ -145,7 +166,32 @@ class FrameStackWrapper(gym.Wrapper):
         frames = list(self._frames)
         obs = []
         for k in self.env.observation_space.spaces.keys():
-            obs.append(
-                (k, np.concatenate([f[k] for f in frames], axis=0))
-            )
+            obs.append((k, np.concatenate([f[k] for f in frames], axis=0)))
         return OrderedDict(obs)
+
+
+class AbsorbingWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        ob_space = gym.spaces.Dict(spaces=dict(env.observation_space.spaces))
+        ob_space.spaces["absorbing_state"] = gym.spaces.Box(
+            low=-1, high=1, shape=[1], dtype=np.uint8
+        )
+        self.observation_space = ob_space
+
+    def reset(self):
+        ob = self.env.reset()
+        return self._get_obs(ob)
+
+    def step(self, ac):
+        ob, reward, done, info = self.env.step(ac)
+        return self._get_obs(ob), reward, done, info
+
+    def _get_obs(self, ob):
+        return get_non_absorbing_state(ob)
+
+    def get_absorbing_state(self):
+        ob = zero_value(self.observation_space)
+        ob["absorbing_state"] = 1
+        return ob
+

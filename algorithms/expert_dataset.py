@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 import numpy as np
 
 from ..utils.logger import logger
+from ..utils.gym_env import get_non_absorbing_state, get_absorbing_state, zero_value
 
 
 class ExpertDataset(Dataset):
@@ -66,6 +67,36 @@ class ExpertDataset(Dataset):
             len(self._data),
             len(demo_files),
         )
+
+    def add_absorbing_states(self, ob_space, ac_space):
+        new_data = []
+        absorbing_state = get_absorbing_state(ob_space)
+        absorbing_action = zero_value(ac_space)
+        for i in range(len(self._data)):
+            transition = self._data[i].copy()
+            transition["ob"] = get_non_absorbing_state(self._data[i]["ob"])
+            # learn reward for the last transition regardless of timeout (different from paper)
+            if self._data[i]["done"]:
+                transition["ob_next"] = absorbing_state
+            else:
+                transition["ob_next"] = get_non_absorbing_state(
+                    self._data[i]["ob_next"]
+                )
+            transition["done_mask"] = 0
+            new_data.append(transition)
+
+            if self._data[i]["done"]:
+                transition = {
+                    "ob": absorbing_state,
+                    "ob_next": absorbing_state,
+                    "ac": absorbing_action,
+                    "rew": 0,
+                    "done": 0,
+                    "done_mask": -1,
+                }
+                new_data.append(transition)
+
+        self._data = new_data
 
     def _get_demo_files(self, demo_file_path):
         demos = []

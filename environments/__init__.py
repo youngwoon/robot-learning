@@ -7,7 +7,7 @@ import gym
 import dmc2gym
 
 from ..utils.logger import logger
-from ..utils.gym_env import DictWrapper, FrameStackWrapper, GymWrapper
+from ..utils.gym_env import DictWrapper, FrameStackWrapper, GymWrapper, AbsorbingWrapper
 from ..utils.subproc_vec_env import SubprocVecEnv
 
 
@@ -87,6 +87,8 @@ def get_gym_env(env_id, config):
     env = DictWrapper(env)
     if config.encoder_type == "cnn":
         env = FrameStackWrapper(env, frame_stack=3)
+    if config.absorbing_state:
+        env = AbsorbingWrapper(env)
 
     return env
 
