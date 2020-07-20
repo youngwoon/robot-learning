@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import gym.spaces
+from torch.optim.lr_scheduler import StepLR
 
 from .base_agent import BaseAgent
 from .dataset import ReplayBuffer, RandomSampler
@@ -42,17 +43,24 @@ class DDPGAgent(BaseAgent):
         self._actor.encoder.copy_conv_weights_from(self._critic.encoder)
         self._actor_target.encoder.copy_conv_weights_from(self._critic_target.encoder)
 
+        # build optimizers
         self._actor_optim = optim.Adam(self._actor.parameters(), lr=config.actor_lr)
         self._critic_optim = optim.Adam(self._critic.parameters(), lr=config.critic_lr)
 
+        # build learning rate scheduler
+        self._actor_lr_scheduler = StepLR(
+            self._actor_optim, step_size=self._config.max_global_step // 5, gamma=0.5,
+        )
+
         # per-episode replay buffer
         sampler = RandomSampler(image_crop_size=config.encoder_image_size)
-        buffer_keys = ["ob", "ac", "done", "rew"]
+        buffer_keys = ["ob", "ac", "done", "done_mask", "rew"]
         self._buffer = ReplayBuffer(
             buffer_keys, config.buffer_size, sampler.sample_func
         )
 
         self._update_iter = 0
+        self._predict_reward = None
 
         self._log_creation()
 
@@ -129,17 +137,20 @@ class DDPGAgent(BaseAgent):
         sync_networks(self._actor_target)
         sync_networks(self._critic_target)
 
+    def set_buffer(self, buffer):
+        self._buffer = buffer
+
+    def set_reward_function(self, predict_reward):
+        self._predict_reward = predict_reward
+
     def train(self):
         train_info = Info()
 
         self._num_updates = 1
         for _ in range(self._num_updates):
+            self._actor_lr_scheduler.step()
             transitions = self._buffer.sample(self._config.batch_size)
             train_info.add(self._update_network(transitions))
-
-        self._soft_update_target_network(
-            self._critic_target, self._critic, self._config.critic_soft_update_weight
-        )
 
         # slow!
         # train_info.add(
@@ -182,7 +193,7 @@ class DDPGAgent(BaseAgent):
             actions_next, _, _, _ = self._actor_target.act(
                 o_next, return_log_prob=False
             )
-            if self._config.algo == "td3":
+            if self._config.critic_ensemble > 1:
                 for k in self._ac_space.spaces.keys():
                     noise = (
                         torch.randn_like(actions_next[k]) * self._config.policy_noise
@@ -196,6 +207,12 @@ class DDPGAgent(BaseAgent):
                 q_next_value = q_next_values
             else:
                 q_next_value = torch.min(*q_next_values)
+
+            if self._predict_reward is not None:
+                rew_il = self._predict_reward(o, ac)
+                rew = (
+                    1 - self._config.gail_env_reward
+                ) * rew_il + self._config.gail_env_reward * rew
             target_q_value = (
                 rew + (1 - done) * self._config.rl_discount_factor * q_next_value
             )
@@ -246,7 +263,7 @@ class DDPGAgent(BaseAgent):
         o = _to_tensor(o)
         o_next = _to_tensor(o_next)
         ac = _to_tensor(transitions["ac"])
-        done = _to_tensor(transitions["done"]).reshape(bs, 1)
+        done = _to_tensor(transitions["done_mask"]).reshape(bs, 1)
         rew = _to_tensor(transitions["rew"]).reshape(bs, 1)
 
         self._update_iter += 1
@@ -254,7 +271,10 @@ class DDPGAgent(BaseAgent):
         critic_train_info = self._update_critic(o, ac, rew, o_next, done)
         info.add(critic_train_info)
 
-        if self._update_iter % self._config.actor_update_freq == 0:
+        if (
+            self._update_iter % self._config.actor_update_freq == 0
+            and self._update_iter > self._config.actor_update_delay
+        ):
             actor_train_info = self._update_actor(o)
             info.add(actor_train_info)
 
@@ -271,7 +291,10 @@ class DDPGAgent(BaseAgent):
                 self._config.encoder_soft_update_weight,
             )
 
-        if self._update_iter % self._config.actor_target_update_freq == 0:
+        if (
+            self._update_iter % self._config.actor_target_update_freq == 0
+            and self._update_iter > self._config.actor_update_delay
+        ):
             self._soft_update_target_network(
                 self._actor_target.fc,
                 self._actor.fc,

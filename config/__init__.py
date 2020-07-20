@@ -262,6 +262,7 @@ def add_ddpg_arguments(parser):
     add_rl_arguments(parser)
     add_off_policy_arguments(parser)
 
+    parser.add_argument("--actor_update_delay", type=int, default=2000)
     parser.add_argument("--actor_update_freq", type=int, default=2)
     parser.add_argument("--actor_target_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
@@ -277,9 +278,9 @@ def add_ddpg_arguments(parser):
 
     parser.set_defaults(gaussian_policy=False)
 
-    parser.set_defaults(evaluate_interval=5000)
-    parser.set_defaults(ckpt_interval=10000)
-    parser.set_defaults(log_interval=500)
+    parser.set_defaults(evaluate_interval=10000)
+    parser.set_defaults(ckpt_interval=50000)
+    parser.set_defaults(log_interval=1000)
 
 
 def add_td3_arguments(parser):
