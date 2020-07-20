@@ -109,7 +109,7 @@ def add_method_arguments(parser):
         pass
 
     # observation normalization
-    parser.add_argument("--ob_norm", type=str2bool, default=True)
+    parser.add_argument("--ob_norm", type=str2bool, default=False)
     parser.add_argument("--max_ob_norm_step", type=int, default=int(1e6))
     parser.add_argument(
         "--clip_obs", type=float, default=200, help="the clip range of observation"
@@ -218,7 +218,6 @@ def add_off_policy_arguments(parser):
         "--buffer_size", type=int, default=int(1e6), help="the size of the buffer"
     )
     parser.set_defaults(warm_up_steps=1000)
-    parser.set_defaults(ob_norm=False)
 
 
 def add_sac_arguments(parser):
