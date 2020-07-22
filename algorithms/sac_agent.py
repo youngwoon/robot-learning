@@ -33,7 +33,10 @@ class SACAgent(BaseAgent):
         self._ob_space = ob_space
         self._ac_space = ac_space
 
-        self._target_entropy = -gym.spaces.flatdim(ac_space)
+        if config.target_entropy is not None:
+            self._target_entropy = config.target_entropy
+        else:
+            self._target_entropy = -gym.spaces.flatdim(ac_space)
         self._log_alpha = torch.tensor(
             np.log(config.alpha_init_temperature),
             requires_grad=True,

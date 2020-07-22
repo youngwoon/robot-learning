@@ -227,6 +227,7 @@ def add_sac_arguments(parser):
     parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
     parser.add_argument("--actor_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
+    parser.add_argument("--target_entropy", type=float, default=None)
     parser.add_argument("--alpha_init_temperature", type=float, default=0.1)
     parser.add_argument(
         "--alpha_lr", type=float, default=1e-4, help="the learning rate of the actor"
