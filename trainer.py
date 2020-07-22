@@ -206,7 +206,7 @@ class Trainer(object):
         elif self._config.algo == "gail":
             runner = self._runner.run(every_steps=self._config.rollout_length, step=step)
         elif self._config.algo == "ppo":
-            runner = self._runner.run(every_steps=self._config.rollout_lengt, step=step)
+            runner = self._runner.run(every_steps=self._config.rollout_length, step=step)
         elif self._config.algo in ["sac", "ddpg", "td3"]:
             runner = self._runner.run(every_steps=1, step=step)
             # runner = self._runner.run(every_episodes=1)
