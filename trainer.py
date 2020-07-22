@@ -39,6 +39,7 @@ class Trainer(object):
         self._config = config
         self._is_chef = config.is_chef
         self._is_rl = config.algo in RL_ALGOS
+        self._average_info = config.average_info
 
         # create environment
         self._env = make_env(config.env, config)
@@ -227,7 +228,8 @@ class Trainer(object):
             # collect rollouts
             if runner:
                 rollout, info = next(runner)
-                info = mpi_average(info)
+                if self._average_info:
+                    info = mpi_average(info)
                 self._agent.store_episode(rollout)
                 step_per_batch = mpi_sum(len(rollout["ac"]))
             else:

@@ -89,6 +89,7 @@ def add_method_arguments(parser):
     parser.add_argument("--notes", type=str, default="")
 
     # log
+    parser.add_argument("--average_info", type=str2bool, default=True)
     parser.add_argument("--log_interval", type=int, default=1)
     parser.add_argument("--evaluate_interval", type=int, default=10)
     parser.add_argument("--ckpt_interval", type=int, default=200)
