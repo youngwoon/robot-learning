@@ -26,6 +26,9 @@ class BaseAgent(object):
 
     def act(self, ob, is_train=True):
         """ Returns action and the actor's activation given an observation @ob. """
+        if hasattr(self, "_rl_agent"):
+            return self._rl_agent.act(ob, is_train)
+
         ob = self.normalize(ob)
 
         ob = ob.copy()

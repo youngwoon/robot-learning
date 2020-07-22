@@ -52,7 +52,7 @@ class ReplayBufferPerStep(object):
     def __init__(self, shapes: dict, buffer_size: int, image_crop_size=84, absorbing_state=False):
         self._capacity = buffer_size
 
-        if absorbin_state:
+        if absorbing_state:
             shapes["ob"]["absorbing_state"] = [1]
             shapes["ob_next"]["absorbing_state"] = [1]
 

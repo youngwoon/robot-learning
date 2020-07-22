@@ -10,12 +10,15 @@ from torch.optim.lr_scheduler import StepLR
 import gym.spaces
 
 from .base_agent import BaseAgent
+from .ddpg_agent import DDPGAgent
+from .sac_agent import SACAgent
 from .dataset import ReplayBuffer, ReplayBufferPerStep, RandomSampler
 from .expert_dataset import ExpertDataset
 from ..networks.discriminator import Discriminator
 from ..utils.info_dict import Info
 from ..utils.logger import logger
 from ..utils.mpi import mpi_average
+from ..utils.gym_env import spaces_to_shapes
 from ..utils.pytorch import (
     optimizer_cuda,
     count_parameters,
@@ -140,6 +143,8 @@ class DACAgent(BaseAgent):
             self._rl_agent.load_state_dict(ckpt["rl_agent"])
         else:
             self._rl_agent.load_state_dict(ckpt)
+            self._network_cuda(self._config.device)
+            return
 
         self._discriminator.load_state_dict(ckpt["discriminator_state_dict"])
         self._ob_norm.load_state_dict(ckpt["ob_norm_state_dict"])
