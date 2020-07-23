@@ -94,6 +94,8 @@ class PPOAgent(BaseAgent):
         # update rollouts
         if self._config.adv_norm:
             rollouts["adv"] = ((adv - adv.mean()) / adv.std()).tolist()
+        else:
+            rollouts["adv"] = adv
         if len(adv) == 1:
             rollouts["adv"] = [-1]
 
