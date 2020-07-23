@@ -6,22 +6,15 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
-from .base_agent import BaseAgent
-from .dataset import ReplayBuffer, RandomSampler
 from ..networks import Actor, Critic
 from ..utils.info_dict import Info
 from ..utils.logger import logger
 from ..utils.mpi import mpi_average
-from ..utils.pytorch import (
-    optimizer_cuda,
-    count_parameters,
-    compute_gradient_norm,
-    compute_weight_norm,
-    sync_networks,
-    sync_grads,
-    obs2tensor,
-    to_tensor,
-)
+from ..utils.pytorch import (compute_gradient_norm, compute_weight_norm,
+                             count_parameters, obs2tensor, optimizer_cuda,
+                             sync_grads, sync_networks, to_tensor)
+from .base_agent import BaseAgent
+from .dataset import RandomSampler, ReplayBuffer
 
 
 class PPOAgent(BaseAgent):
@@ -99,7 +92,8 @@ class PPOAgent(BaseAgent):
         assert np.isfinite(ret).all()
 
         # update rollouts
-        rollouts["adv"] = ((adv - adv.mean()) / adv.std()).tolist()
+        if self._config.adv_norm:
+            rollouts["adv"] = ((adv - adv.mean()) / adv.std()).tolist()
         if len(adv) == 1:
             rollouts["adv"] = [-1]
 

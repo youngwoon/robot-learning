@@ -247,6 +247,7 @@ def add_ppo_arguments(parser):
     add_rl_arguments(parser)
     add_on_policy_arguments(parser)
 
+    parser.add_argument("--adv_norm", type=str2bool, default=True)
     parser.add_argument("--ppo_clip", type=float, default=0.2)
     parser.add_argument("--value_loss_coeff", type=float, default=0.5)
     parser.add_argument("--action_loss_coeff", type=float, default=1.0)
