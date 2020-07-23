@@ -110,8 +110,8 @@ def add_method_arguments(parser):
         pass
 
     # observation normalization
-    parser.add_argument("--ob_norm", type=str2bool, default=False)
-    parser.add_argument("--max_ob_norm_step", type=int, default=int(1e6))
+    parser.add_argument("--ob_norm", type=str2bool, default=True)
+    parser.add_argument("--max_ob_norm_step", type=int, default=int(1e7))
     parser.add_argument(
         "--clip_obs", type=float, default=200, help="the clip range of observation"
     )
@@ -233,8 +233,8 @@ def add_sac_arguments(parser):
     parser.add_argument(
         "--alpha_lr", type=float, default=1e-4, help="the learning rate of the actor"
     )
-    parser.set_defaults(actor_lr=1e-3)
-    parser.set_defaults(critic_lr=1e-3)
+    parser.set_defaults(actor_lr=3e-4)
+    parser.set_defaults(critic_lr=3e-4)
     parser.set_defaults(evaluate_interval=5000)
     parser.set_defaults(ckpt_interval=10000)
     parser.set_defaults(log_interval=500)
@@ -253,7 +253,7 @@ def add_ppo_arguments(parser):
     parser.add_argument("--entropy_loss_coeff", type=float, default=1e-4)
 
     parser.add_argument("--ppo_epoch", type=int, default=5)
-    parser.add_argument("--max_grad_norm", type=float, default=100)
+    parser.add_argument("--max_grad_norm", type=float, default=None)
     parser.set_defaults(critic_soft_update_weight=0.995)
     parser.set_defaults(evaluate_interval=20)
     parser.set_defaults(ckpt_interval=20)

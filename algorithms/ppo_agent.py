@@ -235,18 +235,20 @@ class PPOAgent(BaseAgent):
         # update the actor
         self._actor_optim.zero_grad()
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self._actor.parameters(), self._config.max_grad_norm
-        )
+        if self._config.max_grad_norm:
+            torch.nn.utils.clip_grad_norm_(
+                self._actor.parameters(), self._config.max_grad_norm
+            )
         sync_grads(self._actor)
         self._actor_optim.step()
 
         # update the critic
         self._critic_optim.zero_grad()
         value_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self._critic.parameters(), self._config.max_grad_norm
-        )
+        if self._config.max_grad_norm:
+            torch.nn.utils.clip_grad_norm_(
+                self._critic.parameters(), self._config.max_grad_norm
+            )
         sync_grads(self._critic)
         self._critic_optim.step()
 
