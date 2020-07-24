@@ -242,6 +242,7 @@ def add_sac_arguments(parser):
     parser.set_defaults(critic_soft_update_weight=0.99)
     parser.set_defaults(buffer_size=100000)
     parser.set_defaults(critic_ensemble=2)
+    parser.set_defaults(ob_norm=False)
 
 
 def add_ppo_arguments(parser):
@@ -283,6 +284,7 @@ def add_ddpg_arguments(parser):
     parser.add_argument("--policy_exploration_noise", type=float, default=0.1)
 
     parser.set_defaults(gaussian_policy=False)
+    parser.set_defaults(ob_norm=False)
 
     parser.set_defaults(evaluate_interval=10000)
     parser.set_defaults(ckpt_interval=50000)
@@ -312,6 +314,7 @@ def add_il_arguments(parser):
 def add_bc_arguments(parser):
     parser.set_defaults(gaussian_policy=False)
     parser.set_defaults(max_global_step=100)
+    parser.set_defaults(ob_norm=False)
     parser.add_argument(
         "--bc_lr", type=float, default=1e-3, help="learning rate for bc"
     )
@@ -350,6 +353,11 @@ def add_dac_arguments(parser):
     add_gail_arguments(parser)
     parser.set_defaults(gail_rl_algo="td3")
     parser.set_defaults(absorbing_state=True)
+    parser.set_defaults(warm_up_steps=1000)
+    parser.set_defaults(actor_lr=1e-3)
+    parser.set_defaults(actor_update_delay=1000)
+    parser.set_defaults(batch_size=100)
+    parser.set_defaults(gail_reward="d")
 
 
 def argparser():
