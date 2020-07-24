@@ -94,7 +94,7 @@ class GAILAgent(BaseAgent):
             ac = None
         with torch.no_grad():
             ret = self._discriminator(ob, ac)
-            eps = 1e-20
+            eps = 1e-10
             s = torch.sigmoid(ret)
             if self._config.gail_reward == "vanilla":
                 reward = -(1 - s + eps).log()
