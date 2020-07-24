@@ -40,25 +40,26 @@ class BCAgent(BaseAgent):
             self._actor_optim, step_size=self._config.max_global_step // 5, gamma=0.5,
         )
 
-        self._dataset = ExpertDataset(config.demo_path, config.demo_subsample_interval)
+        if config.is_train:
+            self._dataset = ExpertDataset(config.demo_path, config.demo_subsample_interval)
 
-        if self._config.val_split != 0:
-            dataset_size = len(self._dataset)
-            indices = list(range(dataset_size))
-            split = int(np.floor((1 - self._config.val_split) * dataset_size))
-            train_indices, val_indices = indices[split:], indices[:split]
-            train_sampler = SubsetRandomSampler(train_indices)
-            val_sampler = SubsetRandomSampler(val_indices)
-            self._train_loader = torch.utils.data.DataLoader(
-                self._dataset, batch_size=self._config.batch_size, sampler=train_sampler
-            )
-            self._val_loader = torch.utils.data.DataLoader(
-                self._dataset, batch_size=self._config.batch_size, sampler=val_sampler
-            )
-        else:
-            self._train_loader = torch.utils.data.DataLoader(
-                self._dataset, batch_size=self._config.batch_size, shuffle=True
-            )
+            if self._config.val_split != 0:
+                dataset_size = len(self._dataset)
+                indices = list(range(dataset_size))
+                split = int(np.floor((1 - self._config.val_split) * dataset_size))
+                train_indices, val_indices = indices[split:], indices[:split]
+                train_sampler = SubsetRandomSampler(train_indices)
+                val_sampler = SubsetRandomSampler(val_indices)
+                self._train_loader = torch.utils.data.DataLoader(
+                    self._dataset, batch_size=self._config.batch_size, sampler=train_sampler
+                )
+                self._val_loader = torch.utils.data.DataLoader(
+                    self._dataset, batch_size=self._config.batch_size, sampler=val_sampler
+                )
+            else:
+                self._train_loader = torch.utils.data.DataLoader(
+                    self._dataset, batch_size=self._config.batch_size, shuffle=True
+                )
 
         self._log_creation()
 
