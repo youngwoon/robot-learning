@@ -73,6 +73,9 @@ class ExpertDataset(Dataset):
                             transition["rew"] = demo["rewards"][i]
                         if "dones" in demo:
                             transition["done"] = int(demo["dones"][i])
+                        else:
+                            transition["done"] = 1 if i + 1 == length else 0
+
                         self._data.append(transition)
 
         logger.warn(

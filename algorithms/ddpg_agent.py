@@ -198,17 +198,17 @@ class DDPGAgent(BaseAgent):
                     )
                     actions_next[k] = (actions_next[k] + noise).clamp(-1, 1)
 
-            if self._config.absorbing_state:
-                a_mask = torch.clamp(mask, min=0)  # 0 absorbing/done, 1 not done
-                masked_actions_next = scale_dict_tensor(actions_next, a_mask)
-                q_next_values = self._critic_target(o_next, masked_actions_next)
-            else:
-                q_next_values = self._critic_target(o_next, actions_next)
+                if self._config.absorbing_state:
+                    a_mask = torch.clamp(mask, min=0)  # 0 absorbing/done, 1 not done
+                    masked_actions_next = scale_dict_tensor(actions_next, a_mask)
+                    q_next_values = self._critic_target(o_next, masked_actions_next)
+                else:
+                    q_next_values = self._critic_target(o_next, actions_next)
 
-            if self._config.critic_ensemble == 1:
-                q_next_value = q_next_values
-            else:
                 q_next_value = torch.min(*q_next_values)
+
+            else:
+                q_next_value = self._critic_target(o_next, actions_next)
 
             # For IL, use IL reward
             if self._predict_reward is not None:

@@ -37,7 +37,7 @@ def zero_value(space, dtype=np.float64):
 
 def get_non_absorbing_state(ob):
     ob = ob.copy()
-    ob["absorbing_state"] = np.array([-1])
+    ob["absorbing_state"] = np.array([0])
     return ob
 
 
