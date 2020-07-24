@@ -312,7 +312,8 @@ class Trainer(object):
                     ep_success,
                 )
                 video_path = self._save_video(fname, frames)
-                info["video"] = wandb.Video(video_path, fps=15, format="mp4")
+                if self._config.is_train:
+                    info["video"] = wandb.Video(video_path, fps=15, format="mp4")
 
             info_history.add(info)
 
@@ -329,6 +330,13 @@ class Trainer(object):
             update_iter,
         )
         rollouts, info = self._evaluate(step=step, record_video=self._config.record_video)
+
+        info = info.get_stat()
+        os.makedirs('result', exist_ok=True)
+        with h5py.File('result/{}.hdf5'.format(self._config.run_name), 'w') as hf:
+            for k, v in info.items():
+                print("{}\t{:.03f} $\\pm$ {:.03f}".format(k, v[0], v[1]))
+                hf.create_dataset(k, data=info[k])
 
         if self._config.record_demo:
             new_rollouts = []

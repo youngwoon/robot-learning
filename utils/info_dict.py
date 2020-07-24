@@ -40,6 +40,15 @@ class Info(object):
         self.clear()
         return ret
 
+    def get_stat(self):
+        ret = {}
+        for k, v in self._info.items():
+            if np.isscalar(v):
+                ret[k] = (v, 0)
+            elif isinstance(v[0], (int, float, bool, np.float32, np.int64, np.ndarray)):
+                ret[k] = (np.mean(v), np.std(v))
+        return ret
+
     def __getitem__(self, key):
         return self._info[key]
 
