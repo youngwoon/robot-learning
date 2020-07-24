@@ -260,6 +260,17 @@ def list2dict(rollout):
     return ret
 
 
+def scale_dict_tensor(tensor, scalar):
+    if isinstance(tensor, dict):
+        return OrderedDict(
+            [(k, scale_dict_tensor(tensor[k], scalar)) for k in tensor.keys()]
+        )
+    elif isinstance(tensor, list):
+        return [scale_dict_tensor(tensor[i], scalar) for i in range(len(tensor))]
+    else:
+        return tensor * scalar
+
+
 # From softlearning repo
 def flatten(unflattened, parent_key="", separator="/"):
     items = []

@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torch.autograd as autograd
 import torch.distributions
 from torch.optim.lr_scheduler import StepLR
 import gym.spaces
@@ -35,9 +36,9 @@ class DACAgent(BaseAgent):
         self._ob_space = ob_space
         self._ac_space = ac_space
 
-        if self._config.dac_rl_algo == "td3":
+        if self._config.gail_rl_algo == "td3":
             self._rl_agent = DDPGAgent(config, ob_space, ac_space, env_ob_space)
-        elif self._config.dac_rl_algo == "sac":
+        elif self._config.gail_rl_algo == "sac":
             self._rl_agent = SACAgent(config, ob_space, ac_space, env_ob_space)
         self._rl_agent.set_reward_function(self._predict_reward)
 
@@ -46,6 +47,7 @@ class DACAgent(BaseAgent):
             config, ob_space, ac_space if not config.gail_no_action else None
         )
         self._discriminator_loss = nn.BCEWithLogitsLoss()
+        self._network_cuda(config.device)
 
         # build optimizers
         self._discriminator_optim = optim.Adam(
@@ -60,34 +62,41 @@ class DACAgent(BaseAgent):
         )
 
         # expert dataset
-        self._dataset = ExpertDataset(config.demo_path, config.demo_subsample_interval)
+        self._dataset = ExpertDataset(
+            config.demo_path, config.demo_subsample_interval, ac_space
+        )
+        if self._config.absorbing_state:
+            self._dataset.add_absorbing_states(ob_space, ac_space)
         self._data_loader = torch.utils.data.DataLoader(
-            self._dataset, batch_size=self._config.batch_size, shuffle=True
+            self._dataset,
+            batch_size=self._config.batch_size,
+            shuffle=True,
+            drop_last=True,
         )
         self._data_iter = iter(self._data_loader)
 
         # per-episode replay buffer
-        # sampler = RandomSampler(image_crop_size=config.encoder_image_size)
-        # buffer_keys = ["ob", "ac", "done", "rew"]
-        # self._buffer = ReplayBuffer(
-        #     buffer_keys, config.buffer_size, sampler.sample_func
-        # )
+        sampler = RandomSampler(image_crop_size=config.encoder_image_size)
+        buffer_keys = ["ob", "ob_next", "ac", "done", "done_mask", "rew"]
+        self._buffer = ReplayBuffer(
+            buffer_keys, config.buffer_size, sampler.sample_func
+        )
 
         # per-step replay buffer
-        shapes = {
-            "ob": spaces_to_shapes(env_ob_space),
-            "ob_next": spaces_to_shapes(env_ob_space),
-            "ac": spaces_to_shapes(ac_space),
-            "done": [1],
-            "done_mask": [1],
-            "rew": [1],
-        }
-        self._buffer = ReplayBufferPerStep(
-            shapes,
-            config.buffer_size,
-            config.encoder_image_size,
-            config.absorbing_state,
-        )
+        # shapes = {
+        #     "ob": spaces_to_shapes(env_ob_space),
+        #     "ob_next": spaces_to_shapes(env_ob_space),
+        #     "ac": spaces_to_shapes(ac_space),
+        #     "done": [1],
+        #     "done_mask": [1],
+        #     "rew": [1],
+        # }
+        # self._buffer = ReplayBufferPerStep(
+        #     shapes,
+        #     config.buffer_size,
+        #     config.encoder_image_size,
+        #     config.absorbing_state,
+        # )
 
         self._rl_agent.set_buffer(self._buffer)
 
@@ -102,10 +111,12 @@ class DACAgent(BaseAgent):
             ret = self._discriminator(ob, ac)
             eps = 1e-20
             s = torch.sigmoid(ret)
-            if self._config.gail_vanilla_reward:
+            if self._config.gail_reward == "vanilla":
                 reward = -(1 - s + eps).log()
-            else:
+            elif self._config.gail_reward == "gan":
                 reward = (s + eps).log() - (1 - s + eps).log()
+            elif self._config.gail_reward == "d":
+                reward = ret
         return reward
 
     def predict_reward(self, ob, ac=None):
@@ -128,7 +139,7 @@ class DACAgent(BaseAgent):
             )
 
     def store_episode(self, rollouts):
-        self._buffer.store_episode(rollouts)
+        self._rl_agent.store_episode(rollouts)
 
     def state_dict(self):
         return {
@@ -167,9 +178,6 @@ class DACAgent(BaseAgent):
 
         self._discriminator_lr_scheduler.step()
 
-        _train_info = self._rl_agent.train()
-        train_info.add(_train_info)
-
         if self._update_iter % self._config.discriminator_update_freq == 0:
             self._num_updates = 1
             for _ in range(self._num_updates):
@@ -181,6 +189,9 @@ class DACAgent(BaseAgent):
                     expert_data = next(self._data_iter)
                 _train_info = self._update_discriminator(policy_data, expert_data)
                 train_info.add(_train_info)
+
+        _train_info = self._rl_agent.train()
+        train_info.add(_train_info)
 
         return train_info.get_dict(only_scalar=True)
 
@@ -226,7 +237,10 @@ class DACAgent(BaseAgent):
         entropy = torch.distributions.Bernoulli(logits).entropy().mean()
         entropy_loss = -self._config.gail_entropy_loss_coeff * entropy
 
-        gail_loss = p_loss + e_loss + entropy_loss
+        grad_pen = self._compute_grad_pen(p_o, p_ac, e_o, e_ac)
+        grad_pen_loss = self._config.gail_grad_penalty_coeff * grad_pen
+
+        gail_loss = p_loss + e_loss + entropy_loss + grad_pen_loss
 
         # update the discriminator
         self._discriminator.zero_grad()
@@ -240,5 +254,47 @@ class DACAgent(BaseAgent):
         info["gail_policy_loss"] = p_loss.detach().cpu().item()
         info["gail_expert_loss"] = e_loss.detach().cpu().item()
         info["gail_entropy_loss"] = entropy_loss.detach().cpu().item()
+        info["gail_grad_pen"] = grad_pen.detach().cpu().item()
+        info["gail_grad_loss"] = grad_pen_loss.detach().cpu().item()
 
         return mpi_average(info.get_dict(only_scalar=True))
+
+    def _compute_grad_pen(self, policy_ob, policy_ac, expert_ob, expert_ac):
+        batch_size = self._config.batch_size
+        alpha = torch.rand(batch_size, 1, device=self._config.device)
+
+        def blend_dict(a, b, alpha):
+            if isinstance(a, dict):
+                return OrderedDict(
+                    [(k, blend_dict(a[k], b[k], alpha)) for k in a.keys()]
+                )
+            elif isinstance(a, list):
+                return [blend_dict(a[i], b[i], alpha) for i in range(len(a))]
+            else:
+                expanded_alpha = alpha.expand_as(a)
+                ret = expanded_alpha * a + (1 - expanded_alpha) * b
+                ret.requires_grad = True
+                return ret
+
+        interpolated_ob = blend_dict(policy_ob, expert_ob, alpha)
+        inputs = list(interpolated_ob.values())
+        if policy_ac is not None:
+            interpolated_ac = blend_dict(policy_ac, expert_ac, alpha)
+            inputs = inputs + list(interpolated_ob.values())
+        else:
+            interpolated_ac = None
+
+        interpolated_logit = self._discriminator(interpolated_ob, interpolated_ac)
+        ones = torch.ones(interpolated_logit.size(), device=self._config.device)
+
+        grad = autograd.grad(
+            outputs=interpolated_logit,
+            inputs=inputs,
+            grad_outputs=ones,
+            create_graph=True,
+            retain_graph=True,
+            only_inputs=True,
+        )[0]
+
+        grad_pen = (grad.norm(2, dim=1) - 1).pow(2).mean()
+        return grad_pen

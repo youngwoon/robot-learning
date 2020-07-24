@@ -33,10 +33,7 @@ def create_parser():
 
     # environment
     parser.add_argument(
-        "--env",
-        type=str,
-        default="Hopper-v2",
-        help="environment name",
+        "--env", type=str, default="Hopper-v2", help="environment name",
     )
     parser.add_argument("--seed", type=int, default=123)
 
@@ -51,15 +48,7 @@ def add_method_arguments(parser):
         "--algo",
         type=str,
         default="sac",
-        choices=[
-            "sac",
-            "ppo",
-            "ddpg",
-            "td3",
-            "bc",
-            "gail",
-            "dac",
-        ],
+        choices=["sac", "ppo", "ddpg", "td3", "bc", "gail", "dac",],
     )
 
     # training
@@ -70,10 +59,8 @@ def add_method_arguments(parser):
 
     # evaluation
     parser.add_argument("--ckpt_num", type=int, default=None)
-    parser.add_argument("--num_eval",
-        type=int,
-        default=1,
-        help="number of episodes for evaluation"
+    parser.add_argument(
+        "--num_eval", type=int, default=1, help="number of episodes for evaluation"
     )
 
     # environment
@@ -149,13 +136,23 @@ def add_method_arguments(parser):
 
     elif args.algo in ["gail", "gaifo", "gaifo-s"]:
         add_il_arguments(parser)
-        add_ppo_arguments(parser)
         add_gail_arguments(parser)
 
     elif args.algo in ["dac"]:
         add_il_arguments(parser)
-        add_gail_arguments(parser)
         add_dac_arguments(parser)
+
+    if args.algo in ["gail", "gaifo", "gaifo-s", "dac"]:
+        args, unparsed = parser.parse_known_args()
+
+        if args.gail_rl_algo == "ppo":
+            add_ppo_arguments(parser)
+
+        elif args.gail_rl_algo == "sac":
+            add_sac_arguments(parser)
+
+        elif args.gail_rl_algo == "td3":
+            add_td3_arguments(parser)
 
     return parser
 
@@ -195,7 +192,10 @@ def add_policy_arguments(parser):
         "--critic_lr", type=float, default=3e-4, help="the learning rate of the critic"
     )
     parser.add_argument(
-        "--critic_soft_update_weight", type=float, default=0.995, help="the average coefficient"
+        "--critic_soft_update_weight",
+        type=float,
+        default=0.995,
+        help="the average coefficient",
     )
 
     # absorbing state
@@ -270,7 +270,10 @@ def add_ddpg_arguments(parser):
     parser.add_argument("--actor_target_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
     parser.add_argument(
-        "--actor_soft_update_weight", type=float, default=0.995, help="the average coefficient"
+        "--actor_soft_update_weight",
+        type=float,
+        default=0.995,
+        help="the average coefficient",
     )
     parser.set_defaults(critic_soft_update_weight=0.995)
 
@@ -313,33 +316,40 @@ def add_bc_arguments(parser):
         "--bc_lr", type=float, default=1e-3, help="learning rate for bc"
     )
     parser.add_argument(
-        "--val_split", type=float, default=0, help="how much of dataset to leave for validation set"
+        "--val_split",
+        type=float,
+        default=0,
+        help="how much of dataset to leave for validation set",
     )
 
 
 def add_gail_arguments(parser):
     parser.add_argument("--gail_entropy_loss_coeff", type=float, default=0.0)
-    parser.add_argument("--gail_vanilla_reward", type=str2bool, default=True)
+    parser.add_argument(
+        "--gail_reward", type=str, default="vanilla", choices=["vanilla", "gan", "d"]
+    )
     parser.add_argument("--discriminator_lr", type=float, default=1e-4)
     parser.add_argument("--discriminator_mlp_dim", type=str2intlist, default=[256, 256])
     parser.add_argument(
-        "--discriminator_activation", type=str, default="tanh", choices=["relu", "elu", "tanh"]
+        "--discriminator_activation",
+        type=str,
+        default="tanh",
+        choices=["relu", "elu", "tanh"],
     )
     parser.add_argument("--discriminator_update_freq", type=int, default=4)
     parser.add_argument("--gail_no_action", type=str2bool, default=False)
     parser.add_argument("--gail_env_reward", type=float, default=0.0)
+    parser.add_argument("--gail_grad_penalty_coeff", type=float, default=10.0)
+
+    parser.add_argument(
+        "--gail_rl_algo", type=str, default="ppo", choices=["ppo", "sac", "td3"]
+    )
 
 
 def add_dac_arguments(parser):
-    parser.add_argument("--dac_rl_algo", type=str, default="td3", choices=["sac", "td3"])
-
-    args, unparsed = parser.parse_known_args()
-
-    if args.dac_rl_algo == "sac":
-        add_sac_arguments(parser)
-
-    elif args.dac_rl_algo == "td3":
-        add_td3_arguments(parser)
+    add_gail_arguments(parser)
+    parser.set_defaults(gail_rl_algo="td3")
+    parser.set_defaults(absorbing_state=True)
 
 
 def argparser():
