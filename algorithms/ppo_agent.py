@@ -4,22 +4,22 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
-from .base_agent import BaseAgent
-from .dataset import ReplayBuffer, RandomSampler
 from ..networks import Actor, Critic
 from ..utils.info_dict import Info
 from ..utils.logger import logger
 from ..utils.mpi import mpi_average
 from ..utils.pytorch import (
-    optimizer_cuda,
-    count_parameters,
     compute_gradient_norm,
     compute_weight_norm,
-    sync_networks,
-    sync_grads,
+    count_parameters,
     obs2tensor,
+    optimizer_cuda,
+    sync_grads,
+    sync_networks,
     to_tensor,
 )
+from .base_agent import BaseAgent
+from .dataset import RandomSampler, ReplayBuffer
 
 
 class PPOAgent(BaseAgent):
@@ -262,18 +262,20 @@ class PPOAgent(BaseAgent):
         # update the actor
         self._actor_optim.zero_grad()
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self._actor.parameters(), self._config.max_grad_norm
-        )
+        if self._config.max_grad_norm:
+            torch.nn.utils.clip_grad_norm_(
+                self._actor.parameters(), self._config.max_grad_norm
+            )
         sync_grads(self._actor)
         self._actor_optim.step()
 
         # update the critic
         self._critic_optim.zero_grad()
         value_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            self._critic.parameters(), self._config.max_grad_norm
-        )
+        if self._config.max_grad_norm:
+            torch.nn.utils.clip_grad_norm_(
+                self._critic.parameters(), self._config.max_grad_norm
+            )
         sync_grads(self._critic)
         self._critic_optim.step()
 
