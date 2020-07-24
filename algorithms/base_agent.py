@@ -61,11 +61,17 @@ class BaseAgent(object):
     def is_off_policy(self):
         return self._buffer is not None
 
+    def set_buffer(self, buffer):
+        self._buffer = buffer
+
     def replay_buffer(self):
         return self._buffer.state_dict()
 
     def load_replay_buffer(self, state_dict):
         self._buffer.load_state_dict(state_dict)
+
+    def set_reward_function(self, predict_reward):
+        self._predict_reward = predict_reward
 
     def sync_networks(self):
         raise NotImplementedError()

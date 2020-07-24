@@ -66,7 +66,7 @@ class SACAgent(BaseAgent):
 
         # per-episode replay buffer
         sampler = RandomSampler(image_crop_size=config.encoder_image_size)
-        buffer_keys = ["ob", "ac", "done", "rew"]
+        buffer_keys = ["ob", "ob_next", "ac", "done", "rew"]
         self._buffer = ReplayBuffer(
             buffer_keys, config.buffer_size, sampler.sample_func
         )

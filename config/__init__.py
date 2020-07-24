@@ -212,6 +212,7 @@ def add_rl_arguments(parser):
 def add_on_policy_arguments(parser):
     parser.add_argument("--rollout_length", type=int, default=2000)
     parser.add_argument("--gae_lambda", type=float, default=0.95)
+    parser.add_argument("--advantage_norm", type=str2bool, default=True)
 
 
 def add_off_policy_arguments(parser):
@@ -254,6 +255,7 @@ def add_ppo_arguments(parser):
 
     parser.add_argument("--ppo_epoch", type=int, default=5)
     parser.add_argument("--max_grad_norm", type=float, default=100)
+    parser.set_defaults(ob_norm=True)
     parser.set_defaults(critic_soft_update_weight=0.995)
     parser.set_defaults(evaluate_interval=20)
     parser.set_defaults(ckpt_interval=20)

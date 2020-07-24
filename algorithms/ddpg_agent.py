@@ -54,7 +54,7 @@ class DDPGAgent(BaseAgent):
 
         # per-episode replay buffer
         sampler = RandomSampler(image_crop_size=config.encoder_image_size)
-        buffer_keys = ["ob", "ac", "done", "done_mask", "rew"]
+        buffer_keys = ["ob", "ob_next", "ac", "done", "done_mask", "rew"]
         self._buffer = ReplayBuffer(
             buffer_keys, config.buffer_size, sampler.sample_func
         )
@@ -136,12 +136,6 @@ class DDPGAgent(BaseAgent):
         sync_networks(self._critic)
         sync_networks(self._actor_target)
         sync_networks(self._critic_target)
-
-    def set_buffer(self, buffer):
-        self._buffer = buffer
-
-    def set_reward_function(self, predict_reward):
-        self._predict_reward = predict_reward
 
     def train(self):
         train_info = Info()

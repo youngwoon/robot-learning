@@ -1,5 +1,3 @@
-from collections import OrderedDict
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -52,7 +50,16 @@ class PPOAgent(BaseAgent):
 
         sampler = RandomSampler()
         self._buffer = ReplayBuffer(
-            ["ob", "ac", "done", "rew", "ret", "adv", "ac_before_activation"],
+            [
+                "ob",
+                "ob_next",
+                "ac",
+                "done",
+                "rew",
+                "ret",
+                "adv",
+                "ac_before_activation",
+            ],
             config.rollout_length,
             sampler.sample_func,
         )
@@ -71,11 +78,29 @@ class PPOAgent(BaseAgent):
         ob = rollouts["ob"]
         ob = self.normalize(ob)
         ob = obs2tensor(ob, self._config.device)
-        vpred = self._critic(ob).detach().cpu().numpy()[:, 0]
-        assert len(vpred) == T + 1
 
+        ob_last = rollouts["ob_next"][-1:]
+        ob_last = self.normalize(ob_last)
+        ob_last = obs2tensor(ob_last, self._config.device)
         done = rollouts["done"]
         rew = rollouts["rew"]
+
+        vpred = self._critic(ob).detach().cpu().numpy()[:, 0]
+        vpred_last = self._critic(ob_last).detach().cpu().numpy()[:, 0]
+        vpred = np.append(vpred, vpred_last)
+        assert len(vpred) == T + 1
+
+        if hasattr(self, "predict_reward"):
+            ob = rollouts["ob"]
+            ob = self.normalize(ob)
+            ob = obs2tensor(ob, self._config.device)
+            ac = obs2tensor(rollouts["ac"], self._config.device)
+            rew_il = self._predict_reward(ob, ac).cpu().numpy().squeeze()
+            rew = (1 - self._config.gail_env_reward) * rew_il[
+                :T
+            ] + self._config.gail_env_reward * np.array(rew)
+            assert rew.shape == (T,)
+
         adv = np.empty((T,), "float32")
         lastgaelam = 0
         for t in reversed(range(T)):
@@ -99,9 +124,10 @@ class PPOAgent(BaseAgent):
         assert np.isfinite(ret).all()
 
         # update rollouts
-        rollouts["adv"] = ((adv - adv.mean()) / adv.std()).tolist()
-        if len(adv) == 1:
-            rollouts["adv"] = [-1]
+        if self._config.advantage_norm:
+            rollouts["adv"] = ((adv - adv.mean()) / (adv.std() + 1e-5)).tolist()
+        else:
+            rollouts["adv"] = adv.tolist()
 
         rollouts["ret"] = ret.tolist()
 
@@ -161,6 +187,7 @@ class PPOAgent(BaseAgent):
             * self._config.rollout_length
             // self._config.batch_size
         )
+        assert num_batches > 0
         for _ in range(num_batches):
             transitions = self._buffer.sample(self._config.batch_size)
             _train_info = self._update_network(transitions)
