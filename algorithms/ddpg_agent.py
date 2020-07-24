@@ -20,6 +20,7 @@ from ..utils.pytorch import (
     sync_networks,
     sync_grads,
     to_tensor,
+    scale_dict_tensor,
 )
 
 
@@ -146,18 +147,9 @@ class DDPGAgent(BaseAgent):
             transitions = self._buffer.sample(self._config.batch_size)
             train_info.add(self._update_network(transitions))
 
-        # slow!
-        # train_info.add(
-        #     {
-        #         "actor_grad_norm": compute_gradient_norm(self._actor),
-        #         "actor_weight_norm": compute_weight_norm(self._actor),
-        #         "critic_grad_norm": compute_gradient_norm(self._critic),
-        #         "critic_weight_norm": compute_weight_norm(self._critic),
-        #     }
-        # )
         return train_info.get_dict()
 
-    def _update_actor(self, o):
+    def _update_actor(self, o, mask):
         info = Info()
 
         # the actor loss
@@ -165,10 +157,18 @@ class DDPGAgent(BaseAgent):
             o, return_log_prob=False, detach_conv=True
         )
 
-        if self._config.critic_ensemble == 1:
-            actor_loss = -self._critic(o, actions_real, detach_conv=True).mean()
+        q_pred = self._critic(o, actions_real, detach_conv=True)
+        if self._config.critic_ensemble > 1:
+            q_pred = q_pred[0]
+
+        if self._config.absorbing_state:
+            # do not update the actor for absorbing states
+            a_mask = 1.0 - torch.clamp(-mask, min=0)  # 0 absorbing, 1 done/not done
+            actor_loss = -(q_pred * a_mask).sum()
+            if a_mask.sum() > 1e-8:
+                actor_loss /= a_mask.sum()
         else:
-            actor_loss = -self._critic(o, actions_real, detach_conv=True)[0].mean()
+            actor_loss = -q_pred.mean()
         info["actor_loss"] = actor_loss.cpu().item()
 
         # update the actor
@@ -179,7 +179,7 @@ class DDPGAgent(BaseAgent):
 
         return info
 
-    def _update_critic(self, o, ac, rew, o_next, done):
+    def _update_critic(self, o, ac, rew, o_next, mask):
         info = Info()
 
         # calculate the target Q value function
@@ -187,6 +187,8 @@ class DDPGAgent(BaseAgent):
             actions_next, _, _, _ = self._actor_target.act(
                 o_next, return_log_prob=False
             )
+
+            # TD3 adds noise to action
             if self._config.critic_ensemble > 1:
                 for k in self._ac_space.spaces.keys():
                     noise = (
@@ -196,20 +198,33 @@ class DDPGAgent(BaseAgent):
                     )
                     actions_next[k] = (actions_next[k] + noise).clamp(-1, 1)
 
-            q_next_values = self._critic_target(o_next, actions_next)
+            if self._config.absorbing_state:
+                a_mask = torch.clamp(mask, min=0)  # 0 absorbing/done, 1 not done
+                masked_actions_next = scale_dict_tensor(actions_next, a_mask)
+                q_next_values = self._critic_target(o_next, masked_actions_next)
+            else:
+                q_next_values = self._critic_target(o_next, actions_next)
+
             if self._config.critic_ensemble == 1:
                 q_next_value = q_next_values
             else:
                 q_next_value = torch.min(*q_next_values)
 
+            # For IL, use IL reward
             if self._predict_reward is not None:
                 rew_il = self._predict_reward(o, ac)
                 rew = (
                     1 - self._config.gail_env_reward
                 ) * rew_il + self._config.gail_env_reward * rew
-            target_q_value = (
-                rew + (1 - done) * self._config.rl_discount_factor * q_next_value
-            )
+
+            if self._config.absorbing_state:
+                target_q_value = (
+                    rew + self._config.rl_discount_factor * q_next_value
+                )
+            else:
+                target_q_value = (
+                    rew + mask * self._config.rl_discount_factor * q_next_value
+                )
 
         # the q loss
         if self._config.critic_ensemble == 1:
@@ -257,19 +272,19 @@ class DDPGAgent(BaseAgent):
         o = _to_tensor(o)
         o_next = _to_tensor(o_next)
         ac = _to_tensor(transitions["ac"])
-        done = _to_tensor(transitions["done_mask"]).reshape(bs, 1)
+        mask = _to_tensor(transitions["done_mask"]).reshape(bs, 1)
         rew = _to_tensor(transitions["rew"]).reshape(bs, 1)
 
         self._update_iter += 1
 
-        critic_train_info = self._update_critic(o, ac, rew, o_next, done)
+        critic_train_info = self._update_critic(o, ac, rew, o_next, mask)
         info.add(critic_train_info)
 
         if (
             self._update_iter % self._config.actor_update_freq == 0
             and self._update_iter > self._config.actor_update_delay
         ):
-            actor_train_info = self._update_actor(o)
+            actor_train_info = self._update_actor(o, mask)
             info.add(actor_train_info)
 
         if self._update_iter % self._config.critic_target_update_freq == 0:
