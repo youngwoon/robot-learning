@@ -110,12 +110,54 @@ class ReplayBuffer(object):
     def clear(self):
         self._idx = 0
         self._current_size = 0
+        self._buffer = defaultdict(list)
+
+    # store transitions
+    def store_episode(self, rollout):
+        # @rollout can be any length of transitions
+        for k in self._keys:
+            if self._current_size < self._capacity:
+                self._buffer[k].append(rollout[k])
+            else:
+                self._buffer[k][self._idx] = rollout[k]
+
+        self._idx = (self._idx + 1) % self._capacity
+        if self._current_size < self._capacity:
+            self._current_size += 1
+
+    # sample the data from the replay buffer
+    def sample(self, batch_size):
+        # sample transitions
+        transitions = self._sample_func(self._buffer, batch_size)
+        return transitions
+
+    def state_dict(self):
+        return self._buffer
+
+    def load_state_dict(self, state_dict):
+        self._buffer = state_dict
+        self._current_size = len(self._buffer["ac"])
+
+
+class ReplayBufferEpisode(object):
+    def __init__(self, keys, buffer_size, sample_func):
+        self._capacity = buffer_size
+        self._sample_func = sample_func
+
+        # create the buffer to store info
+        self._keys = keys
+        self.clear()
+
+    def clear(self):
+        self._idx = 0
+        self._current_size = 0
         self._new_episode = True
         self._buffer = defaultdict(list)
 
     # store the episode
     def store_episode(self, rollout):
         if self._new_episode:
+            self._new_episode = False
             for k in self._keys:
                 if self._current_size < self._capacity:
                     self._buffer[k].append(rollout[k])
@@ -123,14 +165,12 @@ class ReplayBuffer(object):
                     self._buffer[k][self._idx] = rollout[k]
         else:
             for k in self._keys:
-                if k == "ob":
-                    self._buffer[k][self._idx].append(rollout[k][1:])
-                else:
-                    self._buffer[k][self._idx].append(rollout[k])
+                self._buffer[k][self._idx].extend(rollout[k])
 
         if rollout["done"][-1]:
             self._idx = (self._idx + 1) % self._capacity
-            self._current_size += 1
+            if self._current_size < self._capacity:
+                self._current_size += 1
             self._new_episode = True
 
     # sample the data from the replay buffer
@@ -169,7 +209,7 @@ class RandomSampler(object):
             ]
 
         transitions["ob_next"] = [
-            episode_batch["ob"][episode_idx][t + 1]
+            episode_batch["ob_next"][episode_idx][t]
             for episode_idx, t in zip(episode_idxs, t_samples)
         ]
 

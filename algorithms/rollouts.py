@@ -11,6 +11,7 @@ import cv2
 
 from ..utils.logger import logger
 from ..utils.info_dict import Info
+from ..utils.gym_env import get_non_absorbing_state, zero_value
 
 
 class Rollout(object):
@@ -122,8 +123,8 @@ class RolloutRunner(object):
                 # replace reward
                 if il:
                     reward_rl = (
-                        1 - self._config.gail_env_reward
-                    ) * reward_il + self._config.gail_env_reward * reward
+                        1 - config.gail_env_reward
+                    ) * reward_il + config.gail_env_reward * reward
                 else:
                     reward_rl = reward
 
@@ -135,14 +136,34 @@ class RolloutRunner(object):
                 if il:
                     ep_rew_il += reward_il
 
-                done_mask = float(done) if ep_len < env.max_episode_steps else 0.0
-                rollout.add({"done_mask": done_mask})
+                if done and ep_len < env.max_episode_steps:
+                    done_mask = 0  # -1 absorbing, 0 done, 1 not done
+                else:
+                    done_mask = 1
+
+                rollout.add(
+                    {"done_mask": done_mask}
+                )  # -1 absorbing, 0 done, 1 not done
 
                 reward_info.add(info)
 
+                if config.absorbing_state and done_mask == 0:
+                    absorbing_state = env.get_absorbing_state()
+                    absorbing_action = zero_value(env.action_space)
+                    rollout._history["ob_next"][-1] = absorbing_state
+                    rollout.add(
+                        {
+                            "ob": absorbing_state,
+                            "ob_next": absorbing_state,
+                            "ac": absorbing_action,
+                            "ac_before_activation": absorbing_action,
+                            "rew": 0.0,
+                            "done": 0,
+                            "done_mask": -1,  # -1 absorbing, 0 done, 1 not done
+                        }
+                    )
+
                 if every_steps is not None and step % every_steps == 0:
-                    # last frame
-                    rollout.add({"ob": ob})
                     yield rollout.get(), ep_info.get_dict(only_scalar=True)
 
             # compute average/sum of information
@@ -166,9 +187,6 @@ class RolloutRunner(object):
 
             episode += 1
             if every_episodes is not None and episode % every_episodes == 0:
-                # last frame
-                rollout.add({"ob": ob})
-                # (TODO) add absorbing state + change to episode based rollout
                 yield rollout.get(), ep_info.get_dict(only_scalar=True)
 
     def run_episode(self, max_step=10000, is_train=True, record_video=False):
@@ -220,8 +238,8 @@ class RolloutRunner(object):
             # replace reward
             if il:
                 reward_rl = (
-                    1 - self._config.gail_env_reward
-                ) * reward_il + self._config.gail_env_reward * reward
+                    1 - config.gail_env_reward
+                ) * reward_il + config.gail_env_reward * reward
             else:
                 reward_rl = reward
 

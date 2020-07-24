@@ -24,26 +24,26 @@ def spaces_to_shapes(space):
         return [space.n]
 
 
-def zero_value(space):
+def zero_value(space, dtype=np.float64):
     if isinstance(space, gym.spaces.Dict):
         return OrderedDict(
-            [(k, zero_value(space)) for k, space in space.spaces.items()]
+            [(k, zero_value(space, dtype)) for k, space in space.spaces.items()]
         )
     elif isinstance(space, gym.spaces.Box):
-        return np.zeros(space.shape)
+        return np.zeros(space.shape).astype(dtype)
     elif isinstance(space, gym.spaces.Discrete):
-        return np.zeros(1)
+        return np.zeros(1).astype(dtype)
 
 
 def get_non_absorbing_state(ob):
     ob = ob.copy()
-    ob["absorbing_state"] = -1
+    ob["absorbing_state"] = np.array([-1])
     return ob
 
 
 def get_absorbing_state(space):
     ob = zero_value(space)
-    ob["absorbing_state"] = 1
+    ob["absorbing_state"] = np.array([1])
     return ob
 
 
@@ -175,7 +175,7 @@ class AbsorbingWrapper(gym.Wrapper):
         super().__init__(env)
         ob_space = gym.spaces.Dict(spaces=dict(env.observation_space.spaces))
         ob_space.spaces["absorbing_state"] = gym.spaces.Box(
-            low=-1, high=1, shape=[1], dtype=np.uint8
+            low=-1, high=1, shape=(1,), dtype=np.uint8
         )
         self.observation_space = ob_space
 
@@ -191,7 +191,5 @@ class AbsorbingWrapper(gym.Wrapper):
         return get_non_absorbing_state(ob)
 
     def get_absorbing_state(self):
-        ob = zero_value(self.observation_space)
-        ob["absorbing_state"] = 1
-        return ob
+        return get_absorbing_state(self.observation_space)
 
