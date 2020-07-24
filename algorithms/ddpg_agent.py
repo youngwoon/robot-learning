@@ -98,6 +98,7 @@ class DDPGAgent(BaseAgent):
 
     def state_dict(self):
         return {
+            "update_iter": self._update_iter,
             "actor_state_dict": self._actor.state_dict(),
             "critic_state_dict": self._critic.state_dict(),
             "actor_optim_state_dict": self._actor_optim.state_dict(),
@@ -114,6 +115,7 @@ class DDPGAgent(BaseAgent):
             self._network_cuda(self._config.device)
             return
 
+        self._update_iter = ckpt["update_iter"]
         self._actor.load_state_dict(ckpt["actor_state_dict"])
         self._critic.load_state_dict(ckpt["critic_state_dict"])
         self._copy_target_network(self._actor_target, self._actor)
@@ -174,6 +176,10 @@ class DDPGAgent(BaseAgent):
         # update the actor
         self._actor_optim.zero_grad()
         actor_loss.backward()
+        if self._config.max_grad_norm:
+            torch.nn.utils.clip_grad_norm_(
+                self._actor.parameters(), self._config.max_grad_norm
+            )
         sync_grads(self._actor)
         self._actor_optim.step()
 

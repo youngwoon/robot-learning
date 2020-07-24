@@ -277,6 +277,7 @@ def add_ddpg_arguments(parser):
         help="the average coefficient",
     )
     parser.set_defaults(critic_soft_update_weight=0.995)
+    parser.add_argument("--max_grad_norm", type=float, default=40.0)
 
     # epsilon greedy
     parser.add_argument("--epsilon_greedy", type=str2bool, default=False)
