@@ -41,7 +41,12 @@ class BCAgent(BaseAgent):
         )
 
         if config.is_train:
-            self._dataset = ExpertDataset(config.demo_path, config.demo_subsample_interval)
+            self._dataset = ExpertDataset(
+                config.demo_path,
+                config.demo_subsample_interval,
+                ac_space,
+                use_low_level=config.demo_low_level,
+            )
 
             if self._config.val_split != 0:
                 dataset_size = len(self._dataset)

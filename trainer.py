@@ -221,8 +221,13 @@ class Trainer(object):
             self._agent.store_episode(rollout)
             step_per_batch = mpi_sum(len(rollout["ac"]))
             step += step_per_batch
+            if runner and step < config.max_ob_norm_step:
+                self._update_normalizer(rollout)
             if self._is_chef:
                 pbar.update(step_per_batch)
+
+        if self._config.algo == "bc" and self._config.ob_norm:
+            self._agent.update_normalizer()
 
         while step < config.max_global_step:
             # collect rollouts

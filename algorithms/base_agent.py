@@ -48,11 +48,16 @@ class BaseAgent(object):
 
         return ac, activation
 
-    def update_normalizer(self, obs):
+    def update_normalizer(self, obs=None):
         """ Updates normalizers. """
         if self._config.ob_norm:
-            self._ob_norm.update(obs)
-            self._ob_norm.recompute_stats()
+            if obs is None:
+                for i in range(len(self._dataset)):
+                    self._ob_norm.update(self._dataset[i]["ob"])
+                self._ob_norm.recompute_stats()
+            else:
+                self._ob_norm.update(obs)
+                self._ob_norm.recompute_stats()
 
     def store_episode(self, rollouts):
         """ Stores @rollouts to replay buffer. """
