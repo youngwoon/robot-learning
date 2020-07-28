@@ -303,6 +303,7 @@ def add_td3_arguments(parser):
 
 def add_il_arguments(parser):
     parser.add_argument("--demo_path", type=str, default=None, help="path to demos")
+    parser.add_argument("--demo_low_level", type=str2bool, default=False, help="use low level actions for training")
     parser.add_argument(
         "--demo_subsample_interval",
         type=int,

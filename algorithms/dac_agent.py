@@ -64,7 +64,10 @@ class DACAgent(BaseAgent):
         # expert dataset
         if config.is_train:
             self._dataset = ExpertDataset(
-                config.demo_path, config.demo_subsample_interval, ac_space
+                config.demo_path,
+                config.demo_subsample_interval,
+                ac_space,
+                use_low_level=config.demo_low_level,
             )
             if self._config.absorbing_state:
                 self._dataset.add_absorbing_states(ob_space, ac_space)

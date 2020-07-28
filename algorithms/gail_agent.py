@@ -58,7 +58,10 @@ class GAILAgent(BaseAgent):
         # expert dataset
         if config.is_train:
             self._dataset = ExpertDataset(
-                config.demo_path, config.demo_subsample_interval, ac_space
+                config.demo_path,
+                config.demo_subsample_interval,
+                ac_space,
+                use_low_level=config.demo_low_level,
             )
             self._data_loader = torch.utils.data.DataLoader(
                 self._dataset,

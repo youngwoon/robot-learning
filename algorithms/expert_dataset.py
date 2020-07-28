@@ -23,6 +23,7 @@ class ExpertDataset(Dataset):
         transform=None,
         target_transform=None,
         download=False,
+        use_low_level=False,
     ):
         self.train = train  # training set or test set
 
@@ -45,19 +46,35 @@ class ExpertDataset(Dataset):
                 for demo in demos:
                     if len(demo["obs"]) != len(demo["actions"]) + 1:
                         logger.error(
-                            "Mismatch in # of observations and actions (%s)", file_path
+                            "Mismatch in # of observations (%d) and actions (%d) (%s)",
+                            len(demo["obs"]),
+                            len(demo["actions"]),
+                            file_path,
                         )
                         continue
 
-                    assert len(demo["obs"]) == len(demo["actions"]) + 1, (
-                        "# observations (%d) should be # actions (%d) + 1"
-                        % (len(demo["obs"]), len(demo["actions"]))
-                    )
-
                     offset = np.random.randint(0, subsample_interval)
-                    length = len(demo["actions"])
                     num_demos += 1
 
+                    if use_low_level:
+                        length = len(demo["low_level_obs"])
+                        for i in range(offset, length, subsample_interval):
+                            transition = {
+                                "ob": demo["low_level_obs"][i],
+                                "ac": demo["low_level_actions"][i],
+                            }
+                            if i + 1 < length:
+                                transition["ob_next"] = demo["low_level_obs"][i + 1]
+                            else:
+                                transition["ob_next"] = demo["obs"][-1]
+
+                            transition["done"] = 1 if i + 1 == length else 0
+
+                            self._data.append(transition)
+
+                        continue
+
+                    length = len(demo["actions"])
                     for i in range(offset, length, subsample_interval):
                         transition = {
                             "ob": demo["obs"][i],
