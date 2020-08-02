@@ -51,24 +51,29 @@ class Trainer(object):
         config_eval = copy.copy(config)
         if hasattr(config_eval, "port"):
             config_eval.port += 1
-        self._env_eval = (
-            make_env(config.env, config_eval) if self._is_chef else None
-        )
+        self._env_eval = make_env(config.env, config_eval) if self._is_chef else None
 
         # create a new observation space after data augmentation (random crop)
         if config.encoder_type == "cnn":
-            assert not config.ob_norm, \
-                "Turn off the observation norm (--ob_norm False) for pixel inputs"
+            assert (
+                not config.ob_norm
+            ), "Turn off the observation norm (--ob_norm False) for pixel inputs"
             ob_space = gym.spaces.Dict(spaces=dict(ob_space.spaces))
             for k in ob_space.spaces.keys():
                 if len(ob_space.spaces[k].shape) == 3:
-                    shape = [ob_space.spaces[k].shape[0], config.encoder_image_size, config.encoder_image_size]
+                    shape = [
+                        ob_space.spaces[k].shape[0],
+                        config.encoder_image_size,
+                        config.encoder_image_size,
+                    ]
                     ob_space.spaces[k] = gym.spaces.Box(
                         low=0, high=255, shape=shape, dtype=np.uint8
                     )
 
         # build agent and networks for algorithm
-        self._agent = get_agent_by_name(config.algo)(config, ob_space, ac_space, env_ob_space)
+        self._agent = get_agent_by_name(config.algo)(
+            config, ob_space, ac_space, env_ob_space
+        )
 
         # build rollout runner
         self._runner = RolloutRunner(config, self._env, self._env_eval, self._agent)
@@ -140,7 +145,10 @@ class Trainer(object):
                 else:
                     logger.warn("Replay buffer not exists at %s", replay_path)
 
-            if self._config.init_ckpt_path is not None and 'bc' in self._config.init_ckpt_path:
+            if (
+                self._config.init_ckpt_path is not None
+                and "bc" in self._config.init_ckpt_path
+            ):
                 return 0, 0
             else:
                 return ckpt["step"], ckpt["update_iter"]
@@ -204,9 +212,13 @@ class Trainer(object):
         if self._config.algo == "bc":
             runner = None
         elif self._config.algo == "gail":
-            runner = self._runner.run(every_steps=self._config.rollout_length, step=step)
+            runner = self._runner.run(
+                every_steps=self._config.rollout_length, step=step
+            )
         elif self._config.algo == "ppo":
-            runner = self._runner.run(every_steps=self._config.rollout_length, step=step)
+            runner = self._runner.run(
+                every_steps=self._config.rollout_length, step=step
+            )
         elif self._config.algo in ["sac", "ddpg", "td3"]:
             runner = self._runner.run(every_steps=1, step=step)
             # runner = self._runner.run(every_episodes=1)
@@ -272,7 +284,9 @@ class Trainer(object):
 
                 if update_iter % config.evaluate_interval == 1:
                     logger.info("Evaluate at %d", update_iter)
-                    rollout, info = self._evaluate(step=step, record_video=config.record_video)
+                    rollout, info = self._evaluate(
+                        step=step, record_video=config.record_video
+                    )
                     self._log_test(step, info)
 
                 if update_iter % config.ckpt_interval == 0:
@@ -295,26 +309,28 @@ class Trainer(object):
             step: the number of environment steps.
             record_video: whether to record video or not.
         """
-        logger.info(
-            "Run %d evaluations at step=%d", self._config.num_eval, step
-        )
+        logger.info("Run %d evaluations at step=%d", self._config.num_eval, step)
         rollouts = []
         info_history = Info()
         for i in range(self._config.num_eval):
             logger.warn("Evalute run %d", i + 1)
-            rollout, info, frames = self._runner.run_episode(is_train=False, record_video=record_video)
+            rollout, info, frames = self._runner.run_episode(
+                is_train=False, record_video=record_video
+            )
             rollouts.append(rollout)
-            logger.info("rollout: %s", {k: v for k, v in info.items() if not "qpos" in k})
+            logger.info(
+                "rollout: %s", {k: v for k, v in info.items() if not "qpos" in k}
+            )
 
             if record_video:
                 ep_rew = info["rew"]
-                ep_success = "s" if "episode_success" in info and info["episode_success"] else "f"
+                ep_success = (
+                    "s"
+                    if "episode_success" in info and info["episode_success"]
+                    else "f"
+                )
                 fname = "{}_step_{:011d}_{}_r_{}_{}.mp4".format(
-                    self._config.env,
-                    step,
-                    i,
-                    ep_rew,
-                    ep_success,
+                    self._config.env, step, i, ep_rew, ep_success,
                 )
                 video_path = self._save_video(fname, frames)
                 if self._config.is_train:
@@ -326,7 +342,9 @@ class Trainer(object):
 
     def evaluate(self):
         """ Evaluates an agent stored in chekpoint with @self._config.ckpt_num. """
-        step, update_iter = self._load_ckpt(self._config.init_ckpt_path, self._config.ckpt_num)
+        step, update_iter = self._load_ckpt(
+            self._config.init_ckpt_path, self._config.ckpt_num
+        )
 
         logger.info(
             "Run %d evaluations at step=%d, update_iter=%d",
@@ -334,14 +352,19 @@ class Trainer(object):
             step,
             update_iter,
         )
-        rollouts, info = self._evaluate(step=step, record_video=self._config.record_video)
+        rollouts, info = self._evaluate(
+            step=step, record_video=self._config.record_video
+        )
 
-        info = info.get_stat()
-        os.makedirs('result', exist_ok=True)
-        with h5py.File('result/{}.hdf5'.format(self._config.run_name), 'w') as hf:
+        info_stat = info.get_stat()
+        os.makedirs("result", exist_ok=True)
+        with h5py.File("result/{}.hdf5".format(self._config.run_name), "w") as hf:
             for k, v in info.items():
-                print("{}\t{:.03f} $\\pm$ {:.03f}".format(k, v[0], v[1]))
                 hf.create_dataset(k, data=info[k])
+        with open("result/{}.txt".format(self._config.run_name), "w") as f:
+            for k, v in info_stat.items():
+                f.write("{}\t{:.03f} $\\pm$ {:.03f}\n".format(k, v[0], v[1]))
+
 
         if self._config.record_demo:
             new_rollouts = []
@@ -355,9 +378,7 @@ class Trainer(object):
                 new_rollouts.append(new_rollout)
 
             fname = "{}_step_{:011d}_{}_trajs.pkl".format(
-                self._config.run_name,
-                step,
-                self._config.num_eval,
+                self._config.run_name, step, self._config.num_eval,
             )
             path = os.path.join(self._config.demo_dir, fname)
             logger.warn("[*] Generating demo: {}".format(path))
