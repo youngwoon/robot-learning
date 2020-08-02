@@ -61,8 +61,13 @@ class ExpertDataset(Dataset):
                         for i in range(offset, length, subsample_interval):
                             transition = {
                                 "ob": demo["low_level_obs"][i],
-                                "ac": demo["low_level_actions"][i],
                             }
+                            if isinstance(demo["low_level_actions"][i], dict):
+                                transition["ac"] = demo["low_level_actions"][i]
+                            else:
+                                transition["ac"] = gym.spaces.unflatten(
+                                    ac_space, demo["low_level_actions"][i]
+                                )
                             if i + 1 < length:
                                 transition["ob_next"] = demo["low_level_obs"][i + 1]
                             else:
