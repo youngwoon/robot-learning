@@ -316,6 +316,7 @@ def add_il_arguments(parser):
 def add_bc_arguments(parser):
     parser.set_defaults(gaussian_policy=False)
     parser.set_defaults(max_global_step=100)
+    parser.set_defaults(evaluate_interval=100)
     parser.set_defaults(ob_norm=False)
     parser.add_argument(
         "--bc_lr", type=float, default=1e-3, help="learning rate for bc"
