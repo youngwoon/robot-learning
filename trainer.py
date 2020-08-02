@@ -109,8 +109,6 @@ class Trainer(object):
         logger.warn("Save checkpoint: %s", ckpt_path)
 
         if self._agent.is_off_policy():
-            # TODO (youngwoon): support large size replay buffer (pickle
-            # supports up to 4 GB)
             replay_path = os.path.join(
                 self._config.log_dir, "replay_%08d.pkl" % ckpt_num
             )
