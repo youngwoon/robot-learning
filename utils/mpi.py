@@ -1,6 +1,18 @@
 import numpy as np
 from mpi4py import MPI
 
+from .info_dict import Info
+
+
+def mpi_gather_average(x):
+    buf = MPI.COMM_WORLD.gather(x, root=0)
+    if MPI.COMM_WORLD.rank == 0:
+        info = Info()
+        for data in buf:
+            info.add(data)
+        return info.get_dict()
+    return None
+
 
 def _mpi_average(x):
     buf = np.zeros_like(x)
