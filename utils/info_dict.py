@@ -10,6 +10,8 @@ class Info(object):
             self.add(info)
 
     def add(self, info):
+        if info is None:
+            return
         if isinstance(info, Info):
             for k, v in info._info.items():
                 self._info[k].extend(v)
