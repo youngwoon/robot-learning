@@ -127,7 +127,7 @@ class ExpertDataset(Dataset):
                     "ob": absorbing_state,
                     "ob_next": absorbing_state,
                     "ac": absorbing_action,
-                    "rew": np.float64(0.0),
+                    # "rew": np.float64(0.0),
                     "done": 0,
                     "done_mask": -1,  # -1 absorbing, 0 done, 1 not done
                 }
