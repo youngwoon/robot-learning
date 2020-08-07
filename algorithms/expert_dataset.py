@@ -57,7 +57,7 @@ class ExpertDataset(Dataset):
                     num_demos += 1
 
                     if use_low_level:
-                        length = len(demo["low_level_obs"])
+                        length = len(demo["low_level_actions"])
                         for i in range(offset, length, subsample_interval):
                             transition = {
                                 "ob": demo["low_level_obs"][i],
