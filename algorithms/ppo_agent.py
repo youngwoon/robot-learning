@@ -90,7 +90,7 @@ class PPOAgent(BaseAgent):
         vpred = np.append(vpred, vpred_last)
         assert len(vpred) == T + 1
 
-        if hasattr(self, "predict_reward"):
+        if hasattr(self, "_predict_reward"):
             ob = rollouts["ob"]
             ob = self.normalize(ob)
             ob = obs2tensor(ob, self._config.device)
