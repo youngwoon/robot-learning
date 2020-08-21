@@ -256,8 +256,8 @@ def add_ppo_arguments(parser):
 
     parser.add_argument("--ppo_epoch", type=int, default=5)
     parser.add_argument("--max_grad_norm", type=float, default=None)
+    parser.add_argument("--actor_update_freq", type=int, default=1)
     parser.set_defaults(ob_norm=True)
-    parser.set_defaults(critic_soft_update_weight=0.995)
     parser.set_defaults(evaluate_interval=20)
     parser.set_defaults(ckpt_interval=20)
 

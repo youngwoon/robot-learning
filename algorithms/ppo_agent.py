@@ -64,7 +64,12 @@ class PPOAgent(BaseAgent):
             sampler.sample_func,
         )
 
-        if config.is_chef:
+        self._update_iter = 0
+
+        self._log_creation()
+
+    def _log_creation(self):
+        if self._config.is_chef:
             logger.info("Creating a PPO agent")
             logger.info("The actor has %d parameters", count_parameters(self._actor))
             logger.info("The critic has %d parameters", count_parameters(self._critic))
@@ -195,32 +200,23 @@ class PPOAgent(BaseAgent):
 
         self._buffer.clear()
 
-        train_info.add(
-            {
-                "actor_grad_norm": compute_gradient_norm(self._actor),
-                "actor_weight_norm": compute_weight_norm(self._actor),
-                "critic_grad_norm": compute_gradient_norm(self._critic),
-                "critic_weight_norm": compute_weight_norm(self._critic),
-            }
-        )
-        return train_info.get_dict(only_scalar=True)
+        # slow!
+        # train_info.add(
+        #     {
+        #         "actor_grad_norm": compute_gradient_norm(self._actor),
+        #         "actor_weight_norm": compute_weight_norm(self._actor),
+        #         "critic_grad_norm": compute_gradient_norm(self._critic),
+        #         "critic_weight_norm": compute_weight_norm(self._critic),
+        #     }
+        # )
+        return mpi_average(train_info.get_dict(only_scalar=True))
 
-    def _update_network(self, transitions):
+    def _update_actor(self, o, a_z, adv):
         info = Info()
 
-        # pre-process observations
-        o = transitions["ob"]
-        o = self.normalize(o)
-
-        bs = len(transitions["done"])
-        _to_tensor = lambda x: to_tensor(x, self._config.device)
-        o = _to_tensor(o)
-        ac = _to_tensor(transitions["ac"])
-        a_z = _to_tensor(transitions["ac_before_activation"])
-        ret = _to_tensor(transitions["ret"]).reshape(bs, 1)
-        adv = _to_tensor(transitions["adv"]).reshape(bs, 1)
-
-        _, _, log_pi, ent = self._actor.act(o, activations=a_z, return_log_prob=True)
+        _, _, log_pi, ent = self._actor.act(
+            o, activations=a_z, return_log_prob=True
+        )
         _, _, old_log_pi, _ = self._old_actor.act(
             o, activations=a_z, return_log_prob=True
         )
@@ -251,14 +247,6 @@ class PPOAgent(BaseAgent):
         info["actor_loss"] = actor_loss.cpu().item()
         actor_loss += entropy_loss
 
-        # the q loss
-        value_pred = self._critic(o)
-        value_loss = self._config.value_loss_coeff * (ret - value_pred).pow(2).mean()
-
-        info["value_target"] = ret.mean().cpu().item()
-        info["value_predicted"] = value_pred.mean().cpu().item()
-        info["value_loss"] = value_loss.cpu().item()
-
         # update the actor
         self._actor_optim.zero_grad()
         actor_loss.backward()
@@ -268,6 +256,18 @@ class PPOAgent(BaseAgent):
             )
         sync_grads(self._actor)
         self._actor_optim.step()
+
+        # include info from policy
+        info.add(self._actor.info)
+
+        return info
+
+    def _update_critic(self, o, ret):
+        info = Info()
+
+        # the q loss
+        value_pred = self._critic(o)
+        value_loss = self._config.value_loss_coeff * (ret - value_pred).pow(2).mean()
 
         # update the critic
         self._critic_optim.zero_grad()
@@ -279,7 +279,34 @@ class PPOAgent(BaseAgent):
         sync_grads(self._critic)
         self._critic_optim.step()
 
-        # include info from policy
-        info.add(self._actor.info)
+        info["value_target"] = ret.mean().cpu().item()
+        info["value_predicted"] = value_pred.mean().cpu().item()
+        info["value_loss"] = value_loss.cpu().item()
 
-        return mpi_average(info.get_dict(only_scalar=True))
+        return info
+
+    def _update_network(self, transitions):
+        info = Info()
+
+        # pre-process observations
+        o = transitions["ob"]
+        o = self.normalize(o)
+
+        bs = len(transitions["done"])
+        _to_tensor = lambda x: to_tensor(x, self._config.device)
+        o = _to_tensor(o)
+        ac = _to_tensor(transitions["ac"])
+        a_z = _to_tensor(transitions["ac_before_activation"])
+        ret = _to_tensor(transitions["ret"]).reshape(bs, 1)
+        adv = _to_tensor(transitions["adv"]).reshape(bs, 1)
+
+        self._update_iter += 1
+
+        critic_train_info = self._update_critic(o, ret)
+        info.add(critic_train_info)
+
+        if self._update_iter % self._config.actor_update_freq == 0:
+            actor_train_info = self._update_actor(o, a_z, adv)
+            info.add(actor_train_info)
+
+        return info
