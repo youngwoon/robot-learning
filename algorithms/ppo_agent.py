@@ -231,7 +231,7 @@ class PPOAgent(BaseAgent):
             ipdb.set_trace()
 
         # the actor loss
-        entropy_loss = self._config.entropy_loss_coeff * ent.mean()
+        entropy_loss = -self._config.entropy_loss_coeff * ent.mean()
         ratio = torch.exp(log_pi - old_log_pi)
         surr1 = ratio * adv
         surr2 = (
