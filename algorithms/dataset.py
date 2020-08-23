@@ -201,6 +201,56 @@ class RandomSampler(object):
             for episode_idx in episode_idxs
         ]
 
+        print(episode_idxs)
+        print(t_samples)
+
+        transitions = {}
+        for key in episode_batch.keys():
+            transitions[key] = [
+                episode_batch[key][episode_idx][t]
+                for episode_idx, t in zip(episode_idxs, t_samples)
+            ]
+
+        transitions["ob_next"] = [
+            episode_batch["ob"][episode_idx][t + 1]
+            for episode_idx, t in zip(episode_idxs, t_samples)
+        ]
+
+        new_transitions = {}
+        for k, v in transitions.items():
+            if isinstance(v[0], dict):
+                sub_keys = v[0].keys()
+                new_transitions[k] = {
+                    sub_key: np.stack([v_[sub_key] for v_ in v]) for sub_key in sub_keys
+                }
+            else:
+                new_transitions[k] = np.stack(v)
+
+        for k, v in new_transitions["ob"].items():
+            if len(v.shape) in [4, 5]:
+                new_transitions["ob"][k] = random_crop(v, self._image_crop_size)
+
+        for k, v in new_transitions["ob_next"].items():
+            if len(v.shape) in [4, 5]:
+                new_transitions["ob_next"][k] = random_crop(v, self._image_crop_size)
+
+        return new_transitions
+
+class SeqSampler(object):
+    def __init__(self, seq_length, image_crop_size=84):
+        self._seq_length = seq_length
+        self._image_crop_size = image_crop_size
+
+    def sample_func(self, episode_batch, batch_size_in_transitions):
+        rollout_batch_size = len(episode_batch["ac"])
+        batch_size = batch_size_in_transitions
+
+        episode_idxs = np.random.randint(0, rollout_batch_size, batch_size)
+        t_samples = [
+            np.random.randint(len(episode_batch["ac"][episode_idx]))
+            for episode_idx in episode_idxs
+        ]
+
         transitions = {}
         for key in episode_batch.keys():
             transitions[key] = [
@@ -212,6 +262,59 @@ class RandomSampler(object):
             episode_batch["ob_next"][episode_idx][t]
             for episode_idx, t in zip(episode_idxs, t_samples)
         ]
+
+        #Create a key that stores the specified future fixed length of sequences, pad last states if necessary
+
+        print(episode_idxs)
+        print(t_samples)
+
+        #List of dictionaries is created here..., flatten it out?
+        transitions["following_sequences"] = [
+            episode_batch["ob"][episode_idx][t:t+ self._seq_length]
+            for episode_idx, t in zip(episode_idxs, t_samples)
+        ]
+
+        #something's wrong here... should use index episode_idx to episode_batch, not transitions
+
+        # # Pad last states
+        # for episode_idx in episode_idxs:
+        #     # curr_ep = episode_batch["ob"][episode_idx]
+        #     # curr_ep.extend(curr_ep[-1:] * (self._seq_length - len(curr_ep)))
+        #
+        #     #all list should have 10 dictionaries now
+        #     if isinstance(transitions["following_sequences"][episode_idx], dict):
+        #         continue
+        #     transitions["following_sequences"][episode_idx].extend(transitions["following_sequences"][episode_idx][-1:] * (self._seq_length - len(transitions["following_sequences"][episode_idx])))
+        #
+        #     #turn transitions["following_sequences"] to a dictionary
+        #     fs_list = transitions["following_sequences"][episode_idx]
+        #     container = {}
+        #     container["ob"] = []
+        #     for i in fs_list:
+        #         container["ob"].extend(i["ob"])
+        #     container["ob"] = np.array(container["ob"])
+        #     transitions["following_sequences"][episode_idx] = container
+
+        # Pad last states
+        for i in range(len(transitions["following_sequences"])):
+            # curr_ep = episode_batch["ob"][episode_idx]
+            # curr_ep.extend(curr_ep[-1:] * (self._seq_length - len(curr_ep)))
+
+            #all list should have 10 dictionaries now
+            if isinstance(transitions["following_sequences"][i], dict):
+                continue
+            transitions["following_sequences"][i].extend(transitions["following_sequences"][i][-1:] * (self._seq_length - len(transitions["following_sequences"][i])))
+
+            #turn transitions["following_sequences"] to a dictionary
+            fs_list = transitions["following_sequences"][i]
+            container = {}
+            container["ob"] = []
+            for j in fs_list:
+                container["ob"].extend(j["ob"])
+            container["ob"] = np.array(container["ob"])
+            transitions["following_sequences"][i] = container
+
+
 
         new_transitions = {}
         for k, v in transitions.items():
@@ -297,3 +400,4 @@ class HERSampler(object):
                 new_transitions[k] = np.stack(v)
 
         return new_transitions
+
