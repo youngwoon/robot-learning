@@ -201,9 +201,6 @@ class RandomSampler(object):
             for episode_idx in episode_idxs
         ]
 
-        print(episode_idxs)
-        print(t_samples)
-
         transitions = {}
         for key in episode_batch.keys():
             transitions[key] = [
@@ -212,7 +209,7 @@ class RandomSampler(object):
             ]
 
         transitions["ob_next"] = [
-            episode_batch["ob"][episode_idx][t + 1]
+            episode_batch["ob_next"][episode_idx][t]
             for episode_idx, t in zip(episode_idxs, t_samples)
         ]
 
