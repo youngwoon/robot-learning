@@ -4,6 +4,16 @@ import gym
 import numpy as np
 
 
+def cat_spaces(spaces):
+    if isinstance(spaces[0], gym.spaces.Box):
+        out_space = gym.spaces.Box(
+            low=np.concatenate([s.low for s in spaces]),
+            high=np.concatenate([s.high for s in spaces])
+        )
+    elif isinstance(spaces[0], gym.spaces.Discrete):
+        out_space = gym.spaces.Discrete(sum([s.n for s in spaces]))
+    return out_space
+
 def stacked_space(space, k):
     if isinstance(space, gym.spaces.Box):
         space_stack = gym.spaces.Box(
