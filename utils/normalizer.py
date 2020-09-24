@@ -7,7 +7,7 @@ from .mpi import mpi_average
 
 
 class SubNormalizer:
-    def __init__(self, size, eps=1e-2, default_clip_range=np.inf, clip_obs=np.inf):
+    def __init__(self, size, eps=1e-1, default_clip_range=np.inf, clip_obs=np.inf):
         if isinstance(size, list):
             self.size = size
         else:
@@ -101,7 +101,7 @@ class SubNormalizer:
 
 
 class Normalizer:
-    def __init__(self, shape, eps=1e-2, default_clip_range=np.inf, clip_obs=np.inf):
+    def __init__(self, shape, eps=1e-1, default_clip_range=np.inf, clip_obs=np.inf):
         if isinstance(shape, gym.spaces.Dict):
             self._shape = {k: list(v.shape) for k, v in shape.spaces.items()}
         elif isinstance(shape, dict):

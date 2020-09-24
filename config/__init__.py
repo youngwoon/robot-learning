@@ -105,7 +105,7 @@ def add_method_arguments(parser):
     parser.add_argument(
         "--clip_range",
         type=float,
-        default=5,
+        default=10,
         help="the clip range after normalization of observation",
     )
 
