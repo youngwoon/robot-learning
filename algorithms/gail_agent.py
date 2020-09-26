@@ -161,6 +161,11 @@ class GAILAgent(BaseAgent):
         self._rl_agent.sync_networks()
         sync_networks(self._discriminator)
 
+    def update_normalizer(self, obs=None):
+        """ Updates normalizers for discriminator and PPO agent. """
+        super().update_normalizer(obs)
+        self._rl_agent.update_normalizer(obs)
+
     def train(self):
         train_info = Info()
 
