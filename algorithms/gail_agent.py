@@ -226,7 +226,7 @@ class GAILAgent(BaseAgent):
         )
 
         logits = torch.cat([p_logit, e_logit], dim=0)
-        entropy = torch.distributions.Bernoulli(logits).entropy().mean()
+        entropy = torch.distributions.Bernoulli(logits=logits).entropy().mean()
         entropy_loss = -self._config.gail_entropy_loss_coeff * entropy
 
         grad_pen = self._compute_grad_pen(p_o, p_ac, e_o, e_ac)
