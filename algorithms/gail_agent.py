@@ -62,6 +62,8 @@ class GAILAgent(BaseAgent):
                 config.demo_subsample_interval,
                 ac_space,
                 use_low_level=config.demo_low_level,
+                sample_range_start=config.demo_sample_range_start,
+                sample_range_end=config.demo_sample_range_end,
             )
             self._data_loader = torch.utils.data.DataLoader(
                 self._dataset,
@@ -89,6 +91,9 @@ class GAILAgent(BaseAgent):
         )
 
         self._rl_agent.set_buffer(self._buffer)
+
+        # update observation normalizer with dataset
+        self.update_normalizer()
 
         self._log_creation()
 
@@ -163,8 +168,20 @@ class GAILAgent(BaseAgent):
 
     def update_normalizer(self, obs=None):
         """ Updates normalizers for discriminator and PPO agent. """
-        super().update_normalizer(obs)
-        self._rl_agent.update_normalizer(obs)
+        if self._config.ob_norm:
+            if obs is None:
+                data_loader = torch.utils.data.DataLoader(
+                    self._dataset,
+                    batch_size=self._config.batch_size,
+                    shuffle=False,
+                    drop_last=False,
+                )
+                for obs in data_loader:
+                    super().update_normalizer(obs)
+                    self._rl_agent.update_normalizer(obs)
+            else:
+                super().update_normalizer(obs)
+                self._rl_agent.update_normalizer(obs)
 
     def train(self):
         train_info = Info()
@@ -184,11 +201,20 @@ class GAILAgent(BaseAgent):
             except StopIteration:
                 self._data_iter = iter(self._data_loader)
                 expert_data = next(self._data_iter)
+
             _train_info = self._update_discriminator(policy_data, expert_data)
             train_info.add(_train_info)
 
         _train_info = self._rl_agent.train()
         train_info.add(_train_info)
+
+        for _ in range(num_batches):
+            try:
+                expert_data = next(self._data_iter)
+            except StopIteration:
+                self._data_iter = iter(self._data_loader)
+                expert_data = next(self._data_iter)
+            self.update_normalizer(expert_data["ob"])
 
         return train_info.get_dict(only_scalar=True)
 

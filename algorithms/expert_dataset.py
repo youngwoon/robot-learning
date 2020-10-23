@@ -24,6 +24,8 @@ class ExpertDataset(Dataset):
         target_transform=None,
         download=False,
         use_low_level=False,
+        sample_range_start=0.0,
+        sample_range_end=1.0,
     ):
         self.train = train  # training set or test set
 
@@ -58,10 +60,12 @@ class ExpertDataset(Dataset):
 
                     if use_low_level:
                         length = len(demo["low_level_actions"])
-                        for i in range(offset, length, subsample_interval):
+                        start = int(length * sample_range_start)
+                        end = int(length * sample_range_end)
+                        for i in range(start + offset, end, subsample_interval):
                             transition = {
                                 "ob": demo["low_level_obs"][i],
-                                "ob_next": demo["low_level_obs"][i + 1]
+                                "ob_next": demo["low_level_obs"][i + 1],
                             }
                             if isinstance(demo["low_level_actions"][i], dict):
                                 transition["ac"] = demo["low_level_actions"][i]
@@ -77,7 +81,9 @@ class ExpertDataset(Dataset):
                         continue
 
                     length = len(demo["actions"])
-                    for i in range(offset, length, subsample_interval):
+                    start = int(length * sample_range_start)
+                    end = int(length * sample_range_end)
+                    for i in range(start + offset, end, subsample_interval):
                         transition = {
                             "ob": demo["obs"][i],
                             "ob_next": demo["obs"][i + 1],

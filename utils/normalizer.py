@@ -34,6 +34,9 @@ class SubNormalizer:
     def update(self, v):
         v = self._clip(v)
         v = v.reshape([-1] + self.size)
+
+        if not isinstance(v, np.ndarray):
+            v = v.detach().numpy()
         # do the computing
         self.local_sum += v.sum(axis=0)
         self.local_sumsq += (np.square(v)).sum(axis=0)

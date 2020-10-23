@@ -98,7 +98,7 @@ def add_method_arguments(parser):
 
     # observation normalization
     parser.add_argument("--ob_norm", type=str2bool, default=True)
-    parser.add_argument("--max_ob_norm_step", type=int, default=int(1e7))
+    parser.add_argument("--max_ob_norm_step", type=int, default=int(1e8))
     parser.add_argument(
         "--clip_obs", type=float, default=200, help="the clip range of observation"
     )
@@ -310,6 +310,12 @@ def add_il_arguments(parser):
         default=1,
         # default=20, # used in GAIL
         help="subsample interval of expert transitions",
+    )
+    parser.add_argument(
+        "--demo_sample_range_start", type=float, default=0.0, help="sample demo range"
+    )
+    parser.add_argument(
+        "--demo_sample_range_end", type=float, default=1.0, help="sample demo range"
     )
 
 
