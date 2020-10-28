@@ -102,7 +102,7 @@ class Trainer(object):
                 environment step is used in this code.
             update_iter: number of policy update. It will be used for resuming training.
         """
-        ckpt_path = os.path.join(self._config.log_dir, "ckpt_%08d.pt" % ckpt_num)
+        ckpt_path = os.path.join(self._config.log_dir, "ckpt_%09d.pt" % ckpt_num)
         state_dict = {"step": ckpt_num, "update_iter": update_iter}
         state_dict["agent"] = self._agent.state_dict()
         torch.save(state_dict, ckpt_path)
