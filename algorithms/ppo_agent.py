@@ -17,6 +17,7 @@ from ..utils.pytorch import (
     sync_grads,
     sync_networks,
     to_tensor,
+    center_crop_images
 )
 from .base_agent import BaseAgent
 from .dataset import RandomSampler, ReplayBuffer
@@ -48,7 +49,7 @@ class PPOAgent(BaseAgent):
             gamma=0.5,
         )
 
-        sampler = RandomSampler()
+        sampler = RandomSampler(image_crop_size=self._config.encoder_image_size)
         self._buffer = ReplayBuffer(
             [
                 "ob",
@@ -83,10 +84,17 @@ class PPOAgent(BaseAgent):
         ob = rollouts["ob"]
         ob = self.normalize(ob)
         ob = obs2tensor(ob, self._config.device)
+        for k, v in ob.items():
+            if self._config.encoder_type == "cnn" and len(v.shape) == 4:
+                ob[k] = center_crop_images(v, self._config.encoder_image_size)
 
         ob_last = rollouts["ob_next"][-1:]
         ob_last = self.normalize(ob_last)
         ob_last = obs2tensor(ob_last, self._config.device)
+        for k, v in ob_last.items():
+            if self._config.encoder_type == "cnn" and len(v.shape) == 4:
+                ob_last[k] = center_crop_images(v, self._config.encoder_image_size)
+
         done = rollouts["done"]
         rew = rollouts["rew"]
 

@@ -319,6 +319,23 @@ def center_crop(img, out=84):
     img = np.expand_dims(img, axis=0)
     return img
 
+# from https://github.com/MishaLaskin/rad/blob/master/utils.py
+def center_crop_images(image, out=84):
+    """
+        args:
+        imgs: np.array shape (B,C,H,W)
+        out: output size (e.g. 84)
+        returns np.array shape (B,C,H,W)
+    """
+    h, w = image.shape[2:]
+    new_h, new_w = out, out
+
+    top = (h - new_h) // 2
+    left = (w - new_w) // 2
+
+    image = image[:, :, top:top + new_h, left:left + new_w]
+    return image
+
 
 # from https://github.com/MishaLaskin/rad/blob/master/data_augs.py
 def random_crop(imgs, out=84):
