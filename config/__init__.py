@@ -226,6 +226,7 @@ def add_sac_arguments(parser):
     add_rl_arguments(parser)
     add_off_policy_arguments(parser)
 
+    parser.add_argument("--asym_ac", type=str2bool, default=False)
     parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
     parser.add_argument("--actor_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
