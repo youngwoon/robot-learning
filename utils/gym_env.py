@@ -87,8 +87,7 @@ class GymWrapper(gym.Wrapper):
         else:
             self.observation_space = env.observation_space
 
-        if self._return_state:
-            self.env_observation_space = env.observation_space
+        self.env_observation_space = env.observation_space
 
     def reset(self):
         ob = self.env.reset()
@@ -132,12 +131,10 @@ class DictWrapper(gym.Wrapper):
         self._is_ob_dict = isinstance(env.observation_space, gym.spaces.Dict)
         if not self._is_ob_dict:
             self.observation_space = gym.spaces.Dict({"ob": env.observation_space})
-            if self._return_state:
-                self.env_observation_space = gym.spaces.Dict({"state": env.env_observation_space})
+            self.env_observation_space = gym.spaces.Dict({"state": env.env_observation_space})
         else:
             self.observation_space = env.observation_space
-            if self._return_state:
-                self.env_observation_space = env.env_observation_space
+            self.env_observation_space = env.env_observation_space
 
         self._is_ac_dict = isinstance(env.action_space, gym.spaces.Dict)
         if not self._is_ac_dict:
@@ -183,8 +180,7 @@ class FrameStackWrapper(gym.Wrapper):
             ob_space.append((k, space_stack))
         self.observation_space = gym.spaces.Dict(ob_space)
 
-        if self._return_state:
-            self.env_observation_space = env.env_observation_space
+        self.env_observation_space = env.env_observation_space
 
     def reset(self):
         ob = self.env.reset()
