@@ -92,6 +92,8 @@ class Trainer(object):
                 entity=config.wandb_entity,
                 notes=config.notes,
             )
+            git_path = os.path.join(config.log_dir, "git.txt")
+            wandb.save(git_path)
 
     def _save_ckpt(self, ckpt_num, update_iter):
         """
