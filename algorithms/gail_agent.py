@@ -170,15 +170,16 @@ class GAILAgent(BaseAgent):
         """ Updates normalizers for discriminator and PPO agent. """
         if self._config.ob_norm:
             if obs is None:
-                data_loader = torch.utils.data.DataLoader(
-                    self._dataset,
-                    batch_size=self._config.batch_size,
-                    shuffle=False,
-                    drop_last=False,
-                )
-                for obs in data_loader:
-                    super().update_normalizer(obs)
-                    self._rl_agent.update_normalizer(obs)
+                if self._config.is_train:
+                    data_loader = torch.utils.data.DataLoader(
+                        self._dataset,
+                        batch_size=self._config.batch_size,
+                        shuffle=False,
+                        drop_last=False,
+                    )
+                    for obs in data_loader:
+                        super().update_normalizer(obs)
+                        self._rl_agent.update_normalizer(obs)
             else:
                 super().update_normalizer(obs)
                 self._rl_agent.update_normalizer(obs)
