@@ -59,6 +59,7 @@ class RolloutRunner(object):
         self._env = env
         self._env_eval = env_eval
         self._pi = pi
+        self._exclude_rollout_log = ["episode_sucess_state"]
 
     def run(
         self,
@@ -167,21 +168,18 @@ class RolloutRunner(object):
                     yield rollout.get(), ep_info.get_dict(only_scalar=True)
 
             # compute average/sum of information
-            ep_info.add({"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl})
-            if il:
-                ep_info.add({"rew_il": ep_rew_il})
             reward_info_dict = reward_info.get_dict(reduction="sum", only_scalar=True)
-            ep_info.add(reward_info_dict)
             reward_info_dict.update({"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl})
             if il:
                 reward_info_dict.update({"rew_il": ep_rew_il})
+            ep_info.add(reward_info_dict)
 
             logger.info(
-                log_prefix + " rollout: %s",
+                "rollout: %s",
                 {
                     k: v
                     for k, v in reward_info_dict.items()
-                    if not "qpos" in k and np.isscalar(v)
+                    if k not in self._exclude_rollout_log and np.isscalar(v)
                 },
             )
 
@@ -270,8 +268,18 @@ class RolloutRunner(object):
         ep_info = {"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl}
         if il:
             ep_info["rew_il"] = ep_rew_il
+        if "episode_success_state" in reward_info.keys():
+            ep_info["episode_success_state"] = reward_info["episode_success_state"]
         ep_info.update(reward_info.get_dict(reduction="sum", only_scalar=True))
 
+        logger.info(
+            "rollout: %s",
+            {
+                k: v
+                for k, v in ep_info.items()
+                if k not in self._exclude_rollout_log and np.isscalar(v)
+            },
+        )
         return rollout.get(), ep_info, self._record_frames
 
     def _store_frame(self, env, ep_len, ep_rew, info={}):

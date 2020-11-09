@@ -170,8 +170,11 @@ class Trainer(object):
                 wandb.log({"train_rl/%s" % k: [wandb.Image(v)]}, step=step)
 
         for k, v in ep_info.items():
-            wandb.log({"train_ep/%s" % k: np.mean(v)}, step=step)
-            wandb.log({"train_ep_max/%s" % k: np.max(v)}, step=step)
+            if isinstance(v, LOG_TYPES) or (
+                isinstance(v, list) and isinstance(v[0], LOG_TYPES)
+            ):
+                wandb.log({"train_ep/%s" % k: np.mean(v)}, step=step)
+                wandb.log({"train_ep_max/%s" % k: np.max(v)}, step=step)
 
     def _log_test(self, step, ep_info):
         """
@@ -187,8 +190,10 @@ class Trainer(object):
                 elif isinstance(v, list) and isinstance(v[0], wandb.Video):
                     for i, video in enumerate(v):
                         wandb.log({"test_ep/%s_%d" % (k, i): video}, step=step)
-                else:
+                elif isinstance(v, list) and isinstance(v[0], LOG_TYPES):
                     wandb.log({"test_ep/%s" % k: np.mean(v)}, step=step)
+                elif isinstance(v, LOG_TYPES):
+                    wandb.log({"test_ep/%s" % k: v}, step=step)
 
     def train(self):
         """ Trains an agent. """
@@ -284,10 +289,10 @@ class Trainer(object):
 
                 if update_iter % config.evaluate_interval == 1:
                     logger.info("Evaluate at %d", update_iter)
-                    rollout, info = self._evaluate(
+                    rollout, ep_info = self._evaluate(
                         step=step, record_video=config.record_video
                     )
-                    self._log_test(step, info)
+                    self._log_test(step, ep_info)
 
                 if update_iter % config.ckpt_interval == 0:
                     self._save_ckpt(step, update_iter)
@@ -318,9 +323,6 @@ class Trainer(object):
                 is_train=False, record_video=record_video
             )
             rollouts.append(rollout)
-            logger.info(
-                "rollout: %s", {k: v for k, v in info.items() if not "qpos" in k}
-            )
 
             if record_video:
                 ep_rew = info["rew"]
@@ -330,7 +332,11 @@ class Trainer(object):
                     else "f"
                 )
                 fname = "{}_step_{:011d}_{}_r_{}_{}.mp4".format(
-                    self._config.env, step, i, ep_rew, ep_success,
+                    self._config.env,
+                    step,
+                    i,
+                    ep_rew,
+                    ep_success,
                 )
                 video_path = self._save_video(fname, frames)
                 if self._config.is_train:
@@ -355,16 +361,31 @@ class Trainer(object):
         rollouts, info = self._evaluate(
             step=step, record_video=self._config.record_video
         )
+        logger.info("Done evaluating %d episodes", self._config.num_eval)
+
+        if "episode_success_state" in info.keys():
+            success_states = info["episode_success_state"]
+            fname = "success_{:011d}.pkl".format(step)
+            path = os.path.join(self._config.log_dir, fname)
+            logger.warn(
+                "[*] Store {} successful terminal states: {}".format(
+                    len(success_states), path
+                )
+            )
+            with open(path, "wb") as f:
+                pickle.dump(success_states, f)
 
         info_stat = info.get_stat()
         os.makedirs("result", exist_ok=True)
         with h5py.File("result/{}.hdf5".format(self._config.run_name), "w") as hf:
             for k, v in info.items():
-                hf.create_dataset(k, data=info[k])
+                if np.isscalar(v) or isinstance(
+                    v[0], (int, float, bool, np.float32, np.int64, np.ndarray)
+                ):
+                    hf.create_dataset(k, data=v)
         with open("result/{}.txt".format(self._config.run_name), "w") as f:
             for k, v in info_stat.items():
                 f.write("{}\t{:.03f} $\\pm$ {:.03f}\n".format(k, v[0], v[1]))
-
 
         if self._config.record_demo:
             new_rollouts = []
@@ -378,7 +399,9 @@ class Trainer(object):
                 new_rollouts.append(new_rollout)
 
             fname = "{}_step_{:011d}_{}_trajs.pkl".format(
-                self._config.run_name, step, self._config.num_eval,
+                self._config.run_name,
+                step,
+                self._config.num_eval,
             )
             path = os.path.join(self._config.demo_dir, fname)
             logger.warn("[*] Generating demo: {}".format(path))

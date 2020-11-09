@@ -3,6 +3,9 @@ from collections import defaultdict
 import numpy as np
 
 
+LOG_TYPES = (int, float, bool, np.float32, np.int64, np.ndarray)
+
+
 class Info(object):
     def __init__(self, info=None):
         self._info = defaultdict(list)
@@ -32,7 +35,7 @@ class Info(object):
         for k, v in self._info.items():
             if np.isscalar(v):
                 ret[k] = v
-            elif isinstance(v[0], (int, float, bool, np.float32, np.int64, np.ndarray)):
+            elif isinstance(v[0], LOG_TYPES):
                 if "_mean" in k or reduction == "mean":
                     ret[k] = np.mean(v)
                 elif reduction == "sum":
@@ -47,7 +50,7 @@ class Info(object):
         for k, v in self._info.items():
             if np.isscalar(v):
                 ret[k] = (v, 0)
-            elif isinstance(v[0], (int, float, bool, np.float32, np.int64, np.ndarray)):
+            elif isinstance(v[0], LOG_TYPES):
                 ret[k] = (np.mean(v), np.std(v))
         return ret
 
@@ -56,6 +59,9 @@ class Info(object):
 
     def __setitem__(self, key, value):
         self._info[key].append(value)
+
+    def keys(self):
+        return self._info.keys()
 
     def items(self):
         return self._info.items()
