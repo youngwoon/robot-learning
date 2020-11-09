@@ -48,7 +48,7 @@ def add_method_arguments(parser):
         "--algo",
         type=str,
         default="sac",
-        choices=["sac", "ppo", "ddpg", "td3", "bc", "gail", "dac",],
+        choices=["sac", "ppo", "ddpg", "td3", "bc", "gail", "dac", "ps"],
     )
 
     # training
@@ -153,6 +153,12 @@ def add_method_arguments(parser):
 
         elif args.gail_rl_algo == "td3":
             add_td3_arguments(parser)
+
+    if args.algo in ["ps"]:
+        add_il_arguments(parser)
+        add_gail_arguments(parser)
+        add_ppo_arguments(parser)
+        add_ps_arguments(parser)
 
     return parser
 
@@ -367,6 +373,11 @@ def add_dac_arguments(parser):
     parser.set_defaults(actor_update_delay=1000)
     parser.set_defaults(batch_size=100)
     parser.set_defaults(gail_reward="d")
+
+
+def add_ps_arguments(parser):
+    parser.add_argument("--ps_dir", type=str, default="./log")
+    parser.add_argument("--ps_ckpts", type=str, default=None)
 
 
 def argparser():

@@ -2,6 +2,7 @@
 from .sac_agent import SACAgent
 from .ppo_agent import PPOAgent
 from .ddpg_agent import DDPGAgent
+from .policy_sequencing_agent import PolicySequencingAgent
 
 # IL algorithms
 from .bc_agent import BCAgent
@@ -14,6 +15,7 @@ RL_ALGOS = {
     "ppo": PPOAgent,
     "ddpg": DDPGAgent,
     "td3": DDPGAgent,
+    "ps": PolicySequencingAgent,
 }
 
 

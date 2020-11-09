@@ -20,7 +20,8 @@ from tqdm import tqdm, trange
 
 from .algorithms import RL_ALGOS, IL_ALGOS, get_agent_by_name
 from .algorithms.rollouts import RolloutRunner
-from .utils.info_dict import Info
+from .algorithms.policy_sequencing_rollouts import PolicySequencingRolloutRunner
+from .utils.info_dict import Info, LOG_TYPES
 from .utils.logger import logger
 from .utils.pytorch import get_ckpt_path, count_parameters
 from .utils.mpi import mpi_sum, mpi_average, mpi_gather_average
@@ -76,7 +77,12 @@ class Trainer(object):
         )
 
         # build rollout runner
-        self._runner = RolloutRunner(config, self._env, self._env_eval, self._agent)
+        if config.algo == "ps":
+            self._runner = PolicySequencingRolloutRunner(
+                config, self._env, self._env_eval, self._agent
+            )
+        else:
+            self._runner = RolloutRunner(config, self._env, self._env_eval, self._agent)
 
         # setup log
         if self._is_chef and config.is_train:
