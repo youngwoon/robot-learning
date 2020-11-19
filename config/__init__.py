@@ -183,6 +183,7 @@ def add_policy_arguments(parser):
         parser.set_defaults(screen_width=100, screen_height=100)
         parser.set_defaults(policy_mlp_dim=[1024, 1024])
         parser.set_defaults(critic_mlp_dim=[1024, 1024])
+        parser.add_argument("--asym_ac", type=str2bool, default=False)
 
     # actor-critic
     parser.add_argument(
@@ -226,7 +227,6 @@ def add_sac_arguments(parser):
     add_rl_arguments(parser)
     add_off_policy_arguments(parser)
 
-    parser.add_argument("--asym_ac", type=str2bool, default=False)
     parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
     parser.add_argument("--actor_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
