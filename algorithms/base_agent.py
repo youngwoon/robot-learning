@@ -4,7 +4,7 @@ import torch
 import numpy as np
 
 from ..utils.normalizer import Normalizer
-from ..utils.pytorch import to_tensor, center_crop
+from ..utils.pytorch import to_tensor, center_crop, random_crop
 
 
 class BaseAgent(object):
@@ -34,7 +34,10 @@ class BaseAgent(object):
         ob = ob.copy()
         for k, v in ob.items():
             if self._config.encoder_type == "cnn" and len(v.shape) == 3:
-                ob[k] = center_crop(v, self._config.encoder_image_size)
+                if self._config.random_crop and is_train:
+                    ob[k] = random_crop(v, self._config.encoder_image_size)
+                else:
+                    ob[k] = center_crop(v, self._config.encoder_image_size)
             else:
                 ob[k] = np.expand_dims(ob[k], axis=0)
 

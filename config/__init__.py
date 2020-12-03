@@ -173,6 +173,7 @@ def add_policy_arguments(parser):
         "--encoder_type", type=str, default="mlp", choices=["mlp", "cnn"]
     )
     parser.add_argument("--encoder_image_size", type=int, default=84)
+    parser.add_argument("--random_crop", type=str2bool, default=False)
     parser.add_argument("--encoder_conv_dim", type=int, default=32)
     parser.add_argument("--encoder_kernel_size", type=str2intlist, default=[3, 3, 3, 3])
     parser.add_argument("--encoder_stride", type=str2intlist, default=[2, 1, 1, 1])

@@ -345,6 +345,8 @@ def random_crop(imgs, out=84):
         out: output size (e.g. 84)
         returns np.array
     """
+    if len(imgs.shape) == 3:
+        imgs = np.expand_dims(imgs, axis=0)
     b, c, h, w = imgs.shape
     crop_max = h - out + 1
     w1 = np.random.randint(0, crop_max, b)
