@@ -303,7 +303,9 @@ class Trainer(object):
                 if update_iter % config.ckpt_interval == 0:
                     self._save_ckpt(step, update_iter)
 
-        self._save_ckpt(step, update_iter)
+        if self._is_chef:
+            self._save_ckpt(step, update_iter)
+
         logger.info("Reached %s steps. worker %d stopped.", step, config.rank)
 
     def _update_normalizer(self, rollout):
