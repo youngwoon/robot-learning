@@ -4,7 +4,7 @@ import torch
 import numpy as np
 
 from ..utils.normalizer import Normalizer
-from ..utils.pytorch import to_tensor, center_crop, random_crop
+from ..utils.pytorch import to_tensor, center_crop, center_translate
 
 
 class BaseAgent(object):
@@ -34,8 +34,9 @@ class BaseAgent(object):
         ob = ob.copy()
         for k, v in ob.items():
             if self._config.encoder_type == "cnn" and len(v.shape) == 3:
-                if self._config.random_crop and is_train:
-                    ob[k] = random_crop(v, self._config.encoder_image_size)
+                assert not ("crop" in self._config.data_augs and "translate" in self._config.data_augs) # can't crop and translate
+                if "translate" in self._config.data_augs:
+                    ob[k] = center_translate(v, self._config.encoder_image_size)
                 else:
                     ob[k] = center_crop(v, self._config.encoder_image_size)
             else:
