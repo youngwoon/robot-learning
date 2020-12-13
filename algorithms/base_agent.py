@@ -4,8 +4,7 @@ import torch
 import numpy as np
 
 from ..utils.normalizer import Normalizer
-from ..utils.pytorch import to_tensor, center_crop, center_translate
-
+from ..utils.pytorch import to_tensor, center_crop
 
 class BaseAgent(object):
     """ Base class for agents. """
@@ -34,10 +33,6 @@ class BaseAgent(object):
         ob = ob.copy()
         for k, v in ob.items():
             if self._config.encoder_type == "cnn" and len(v.shape) == 3:
-                assert not ("crop" in self._config.data_augs and "translate" in self._config.data_augs) # can't crop and translate
-                if "translate" in self._config.data_augs:
-                    ob[k] = center_translate(v, self._config.encoder_image_size)
-                else:
                     ob[k] = center_crop(v, self._config.encoder_image_size)
             else:
                 ob[k] = np.expand_dims(ob[k], axis=0)
