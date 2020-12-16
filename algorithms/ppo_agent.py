@@ -184,15 +184,6 @@ class PPOAgent(BaseAgent):
     def train(self):
         train_info = Info()
 
-        self._actor_lr_scheduler.step()
-        self._critic_lr_scheduler.step()
-
-        logger.info(
-            "Actor lr %f, Critic lr %f",
-            self._actor_lr_scheduler.get_lr()[0],
-            self._critic_lr_scheduler.get_lr()[0],
-        )
-
         self._copy_target_network(self._old_actor, self._actor)
 
         num_batches = (
@@ -201,12 +192,23 @@ class PPOAgent(BaseAgent):
             // self._config.batch_size
         )
         assert num_batches > 0
+
         for _ in range(num_batches):
             transitions = self._buffer.sample(self._config.batch_size)
             _train_info = self._update_network(transitions)
             train_info.add(_train_info)
 
         self._buffer.clear()
+
+        self._actor_lr_scheduler.step()
+        self._critic_lr_scheduler.step()
+
+        logger.info(
+            "Actor lr %f, Critic lr %f, PPO Clip Frac %f",
+            self._actor_lr_scheduler.get_lr()[0],
+            self._critic_lr_scheduler.get_lr()[0],
+            np.mean(train_info["ppo_clip_frac"])
+        )
 
         # slow!
         # train_info.add(
@@ -231,7 +233,6 @@ class PPOAgent(BaseAgent):
         if old_log_pi.min() < -100:
             logger.error("sampling an action with a probability of 1e-100")
             import ipdb
-
             ipdb.set_trace()
 
         # the actor loss
@@ -244,6 +245,8 @@ class PPOAgent(BaseAgent):
         )
         actor_loss = -torch.min(surr1, surr2).mean()
 
+        ppo_clip_frac = torch.gt(torch.abs(ratio - 1.0), self._config.ppo_clip).float().mean()
+
         if (
             not np.isfinite(ratio.cpu().detach()).all()
             or not np.isfinite(adv.cpu().detach()).all()
@@ -251,6 +254,7 @@ class PPOAgent(BaseAgent):
             import ipdb
 
             ipdb.set_trace()
+        info["ppo_clip_frac"] = ppo_clip_frac.cpu().item()
         info["entropy_loss"] = entropy_loss.cpu().item()
         info["actor_loss"] = actor_loss.cpu().item()
         actor_loss += entropy_loss
