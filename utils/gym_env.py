@@ -93,9 +93,9 @@ class GymWrapper(gym.Wrapper):
         ob = self.env.reset()
 
         if self._return_state:
-            return self._get_obs(ob), ob
+            return self._get_obs(ob, reset=True), ob
 
-        return self._get_obs(ob)
+        return self._get_obs(ob, reset=True)
 
     def step(self, ac):
         reward = 0
@@ -109,7 +109,7 @@ class GymWrapper(gym.Wrapper):
 
         return self._get_obs(ob), reward, done, info
 
-    def _get_obs(self, ob):
+    def _get_obs(self, ob, reset=False):
         if self._from_pixels:
             ob = self.render(
                 mode="rgb_array",
@@ -117,6 +117,13 @@ class GymWrapper(gym.Wrapper):
                 width=self._width,
                 camera_id=self._camera_id,
             )
+            if reset:
+                ob = self.render(
+                    mode="rgb_array",
+                    height=self._height,
+                    width=self._width,
+                    camera_id=self._camera_id,
+                )
             if self._channels_first:
                 ob = ob.transpose(2, 0, 1).copy()
         return ob
@@ -230,4 +237,3 @@ class AbsorbingWrapper(gym.Wrapper):
 
     def get_absorbing_state(self):
         return get_absorbing_state(self.observation_space)
-
