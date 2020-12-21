@@ -200,6 +200,9 @@ def add_policy_arguments(parser):
         help="the average coefficient",
     )
 
+    parser.add_argument("--log_std_min", type=float, default=-10)
+    parser.add_argument("--log_std_max", type=float, default=2)
+
     # absorbing state
     parser.add_argument("--absorbing_state", type=str2bool, default=False)
 
