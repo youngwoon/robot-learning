@@ -9,15 +9,13 @@ from ..utils.info_dict import Info
 from ..utils.logger import logger
 from ..utils.mpi import mpi_average
 from ..utils.pytorch import (
-    compute_gradient_norm,
-    compute_weight_norm,
     count_parameters,
     obs2tensor,
     optimizer_cuda,
     sync_grads,
     sync_networks,
     to_tensor,
-    center_crop_images
+    center_crop_images,
 )
 from .base_agent import BaseAgent
 from .dataset import RandomSampler, ReplayBuffer
@@ -35,21 +33,26 @@ class PPOAgent(BaseAgent):
         self._critic = Critic(config, ob_space)
         self._network_cuda(config.device)
 
-        self._actor_optim = optim.Adam(self._actor.parameters(), lr=config.actor_lr)
+        self._actor_optim = optim.Adam(
+            self._actor.parameters(),
+            lr=config.actor_lr,
+            weight_decay=config.actor_weight_decay,
+        )
         self._critic_optim = optim.Adam(self._critic.parameters(), lr=config.critic_lr)
 
         self._actor_lr_scheduler = StepLR(
             self._actor_optim,
-            step_size=self._config.max_global_step // self._config.rollout_length // 5,
+            step_size=self._config.max_global_step // self._config.rollout_length,
             gamma=0.5,
         )
         self._critic_lr_scheduler = StepLR(
             self._critic_optim,
-            step_size=self._config.max_global_step // self._config.rollout_length // 5,
+            step_size=self._config.max_global_step // self._config.rollout_length,
             gamma=0.5,
         )
 
         sampler = RandomSampler(image_crop_size=self._config.encoder_image_size)
+        self._rollouts = None
         self._buffer = ReplayBuffer(
             [
                 "ob",
@@ -76,6 +79,7 @@ class PPOAgent(BaseAgent):
             logger.info("The critic has %d parameters", count_parameters(self._critic))
 
     def store_episode(self, rollouts):
+        self._rollouts = rollouts
         self._compute_gae(rollouts)
         self._buffer.store_episode(rollouts)
 
@@ -105,13 +109,12 @@ class PPOAgent(BaseAgent):
 
         if hasattr(self, "_predict_reward"):
             ob = rollouts["ob"]
-            ob = self.normalize(ob)
-            ob = obs2tensor(ob, self._config.device)
-            ac = obs2tensor(rollouts["ac"], self._config.device)
-            rew_il = self._predict_reward(ob, ac).cpu().numpy().squeeze()
+            ob_next = rollouts["ob_next"]
+            ac = rollouts["ac"]
+            rew_il = self._predict_reward(ob, ob_next, ac)
             rew = (1 - self._config.gail_env_reward) * rew_il[
                 :T
-            ] + self._config.gail_env_reward * np.array(rew)
+            ] + self._config.gail_env_reward * np.array(rew) * self._config.reward_scale
             assert rew.shape == (T,)
 
         adv = np.empty((T,), "float32")
@@ -144,6 +147,9 @@ class PPOAgent(BaseAgent):
 
         rollouts["ret"] = ret.tolist()
 
+    def is_off_policy(self):
+        return False
+
     def state_dict(self):
         return {
             "actor_state_dict": self._actor.state_dict(),
@@ -156,7 +162,7 @@ class PPOAgent(BaseAgent):
     def load_state_dict(self, ckpt):
         if "critic_state_dict" not in ckpt:
             # BC initialization
-            logger.warn("Load only actor from BC initialization")
+            logger.warning("Load only actor from BC initialization")
             self._actor.load_state_dict(ckpt["actor_state_dict"], strict=False)
             self._network_cuda(self._config.device)
             self._ob_norm.load_state_dict(ckpt["ob_norm_state_dict"])
@@ -186,53 +192,44 @@ class PPOAgent(BaseAgent):
 
         self._copy_target_network(self._old_actor, self._actor)
 
-        num_batches = (
-            self._config.ppo_epoch
-            * self._config.rollout_length
-            // self._config.batch_size
-        )
+        num_batches = self._config.rollout_length // self._config.batch_size
         assert num_batches > 0
 
-        for _ in range(num_batches):
-            transitions = self._buffer.sample(self._config.batch_size)
-            _train_info = self._update_network(transitions)
-            train_info.add(_train_info)
+        for _ in range(self._config.ppo_epoch):
+            # self._buffer.clear()
+            # self._compute_gae(self._rollouts)
+            # self._buffer.store_episode(self._rollouts)
+
+            for _ in range(num_batches):
+                transitions = self._buffer.sample(self._config.batch_size)
+                _train_info = self._update_network(transitions)
+                train_info.add(_train_info)
 
         self._buffer.clear()
+
+        logger.info(
+            "Actor lr %f, Critic lr %f, PPO Clip Frac %f",
+            self._actor_lr_scheduler.get_last_lr()[0],
+            self._critic_lr_scheduler.get_last_lr()[0],
+            np.mean(train_info["ppo_clip_frac"]),
+        )
 
         self._actor_lr_scheduler.step()
         self._critic_lr_scheduler.step()
 
-        logger.info(
-            "Actor lr %f, Critic lr %f, PPO Clip Frac %f",
-            self._actor_lr_scheduler.get_lr()[0],
-            self._critic_lr_scheduler.get_lr()[0],
-            np.mean(train_info["ppo_clip_frac"])
-        )
-
-        # slow!
-        # train_info.add(
-        #     {
-        #         "actor_grad_norm": compute_gradient_norm(self._actor),
-        #         "actor_weight_norm": compute_weight_norm(self._actor),
-        #         "critic_grad_norm": compute_gradient_norm(self._critic),
-        #         "critic_weight_norm": compute_weight_norm(self._critic),
-        #     }
-        # )
         return mpi_average(train_info.get_dict(only_scalar=True))
 
     def _update_actor(self, o, a_z, adv):
         info = Info()
 
-        _, _, log_pi, ent = self._actor.act(
-            o, activations=a_z, return_log_prob=True
-        )
+        _, _, log_pi, ent = self._actor.act(o, activations=a_z, return_log_prob=True)
         _, _, old_log_pi, _ = self._old_actor.act(
             o, activations=a_z, return_log_prob=True
         )
         if old_log_pi.min() < -100:
             logger.error("sampling an action with a probability of 1e-100")
             import ipdb
+
             ipdb.set_trace()
 
         # the actor loss
@@ -245,7 +242,15 @@ class PPOAgent(BaseAgent):
         )
         actor_loss = -torch.min(surr1, surr2).mean()
 
-        ppo_clip_frac = torch.gt(torch.abs(ratio - 1.0), self._config.ppo_clip).float().mean()
+        if torch.isnan(actor_loss):
+            logger.error("actor loss is NaN")
+            import ipdb
+
+            ipdb.set_trace()
+
+        ppo_clip_frac = (
+            torch.gt(torch.abs(ratio - 1.0), self._config.ppo_clip).float().mean()
+        )
 
         if (
             not np.isfinite(ratio.cpu().detach()).all()
@@ -254,8 +259,10 @@ class PPOAgent(BaseAgent):
             import ipdb
 
             ipdb.set_trace()
+
         info["ppo_clip_frac"] = ppo_clip_frac.cpu().item()
         info["entropy_loss"] = entropy_loss.cpu().item()
+        info["entropy"] = ent.mean().cpu().item()
         info["actor_loss"] = actor_loss.cpu().item()
         actor_loss += entropy_loss
 

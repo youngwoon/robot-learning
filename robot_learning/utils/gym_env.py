@@ -8,11 +8,12 @@ def cat_spaces(spaces):
     if isinstance(spaces[0], gym.spaces.Box):
         out_space = gym.spaces.Box(
             low=np.concatenate([s.low for s in spaces]),
-            high=np.concatenate([s.high for s in spaces])
+            high=np.concatenate([s.high for s in spaces]),
         )
     elif isinstance(spaces[0], gym.spaces.Discrete):
         out_space = gym.spaces.Discrete(sum([s.n for s in spaces]))
     return out_space
+
 
 def stacked_space(space, k):
     if isinstance(space, gym.spaces.Box):
@@ -23,6 +24,19 @@ def stacked_space(space, k):
     elif isinstance(space, gym.spaces.Discrete):
         space_stack = gym.spaces.Discrete(space.n * k)
     return space_stack
+
+
+def value_to_space(value):
+    if isinstance(value, dict):
+        space = gym.spaces.Dict(
+            [(k, value_to_space(v)) for k, v in value.items()]
+        )
+    elif isinstance(value, np.ndarray):
+        space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=value.shape)
+    else:
+        raise NotImplementedError
+
+    return space
 
 
 def spaces_to_shapes(space):
@@ -67,7 +81,7 @@ class GymWrapper(gym.Wrapper):
         camera_id=None,
         channels_first=True,
         frame_skip=1,
-        return_state=False
+        return_state=False,
     ):
         super().__init__(env)
         self._from_pixels = from_pixels
@@ -138,7 +152,9 @@ class DictWrapper(gym.Wrapper):
         self._is_ob_dict = isinstance(env.observation_space, gym.spaces.Dict)
         if not self._is_ob_dict:
             self.observation_space = gym.spaces.Dict({"ob": env.observation_space})
-            self.env_observation_space = gym.spaces.Dict({"state": env.env_observation_space})
+            self.env_observation_space = gym.spaces.Dict(
+                {"state": env.env_observation_space}
+            )
         else:
             self.observation_space = env.observation_space
             self.env_observation_space = env.env_observation_space

@@ -27,21 +27,43 @@ class Actor(nn.Module):
         self._tanh = tanh_policy
         self._gaussian = config.gaussian_policy
 
+        # bias to set initial std 0.5
+        if config.use_log_std_bias:
+            self._log_std_bias = np.arctanh(
+                2
+                * (np.log(config.target_init_std) - config.log_std_min)
+                / (config.log_std_max - config.log_std_min)
+                - 1
+            )
+            logger.info("Bias for policy log_std %f", self._log_std_bias)
+        else:
+            self._log_std_bias = 0
+
         if encoder:
             self.encoder = encoder
         else:
             self.encoder = Encoder(config, ob_space)
 
         self.fc = MLP(
-            config, self.encoder.output_dim, config.policy_mlp_dim[-1], config.policy_mlp_dim[:-1]
+            config,
+            self.encoder.output_dim,
+            config.policy_mlp_dim[-1],
+            hid_dims=config.policy_mlp_dim[:-1],
+            small_weight=True,
         )
 
         self.fcs = nn.ModuleDict()
         self._dists = {}
         for k, v in ac_space.spaces.items():
-            if isinstance(v, gym.spaces.Box): # and self._gaussian:  # for convenience to transfer bc policy
+            if isinstance(
+                v, gym.spaces.Box
+            ):  # and self._gaussian:  # for convenience to transfer bc policy
                 self.fcs.update(
-                    {k: MLP(config, config.policy_mlp_dim[-1], gym.spaces.flatdim(v) * 2)}
+                    {
+                        k: MLP(
+                            config, config.policy_mlp_dim[-1], gym.spaces.flatdim(v) * 2
+                        )
+                    }
                 )
             else:
                 self.fcs.update(
@@ -66,11 +88,17 @@ class Actor(nn.Module):
 
         means, stds = OrderedDict(), OrderedDict()
         for k, v in self._ac_space.spaces.items():
-            if isinstance(v, gym.spaces.Box): # and self._gaussian:
+            if isinstance(v, gym.spaces.Box):  # and self._gaussian:
                 mean, log_std = self.fcs[k](out).chunk(2, dim=-1)
-                log_std_min, log_std_max = self._config.log_std_min , self._config.log_std_max
-                log_std = torch.tanh(log_std)
-                log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
+                log_std_min, log_std_max = (
+                    self._config.log_std_min,
+                    self._config.log_std_max,
+                )
+
+                log_std = torch.tanh(log_std + self._log_std_bias)
+                log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (
+                    log_std + 1
+                )
                 std = log_std.exp()
             else:
                 mean, std = self.fcs[k](out), None
@@ -80,7 +108,14 @@ class Actor(nn.Module):
 
         return means, stds
 
-    def act(self, ob, deterministic=False, activations=None, return_log_prob=False, detach_conv=False):
+    def act(
+        self,
+        ob,
+        deterministic=False,
+        activations=None,
+        return_log_prob=False,
+        detach_conv=False,
+    ):
         """ Samples action for rollout. """
         means, stds = self.forward(ob, detach_conv=detach_conv)
 
@@ -116,7 +151,12 @@ class Actor(nn.Module):
 
         if return_log_prob:
             log_probs = torch.cat(list(log_probs.values()), -1).sum(-1, keepdim=True)
-            entropy = mixed_dist.entropy()
+            if self._tanh:
+                # TODO: Fix entropy
+                # entropy = -log_probs
+                entropy = mixed_dist.entropy()
+            else:
+                entropy = mixed_dist.entropy()
         else:
             log_probs = None
             entropy = None

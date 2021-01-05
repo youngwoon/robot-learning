@@ -58,11 +58,11 @@ class SACAgent(BaseAgent):
             [self._log_alpha], lr=config.alpha_lr, betas=(0.5, 0.999)
         )
         self._actor_optim = optim.Adam(
-            self._actor.parameters(), lr=config.actor_lr, betas=(0.9, 0.999)
+            self._actor.parameters(),
+            lr=config.actor_lr,
+            weight_decay=config.actor_weight_decay,
         )
-        self._critic_optim = optim.Adam(
-            self._critic.parameters(), lr=config.critic_lr, betas=(0.9, 0.999)
-        )
+        self._critic_optim = optim.Adam(self._critic.parameters(), lr=config.critic_lr)
 
         # per-episode replay buffer
         sampler = RandomSampler(image_crop_size=config.encoder_image_size)
@@ -93,6 +93,9 @@ class SACAgent(BaseAgent):
             logger.info("The actor has %d parameters", count_parameters(self._actor))
             logger.info("The critic has %d parameters", count_parameters(self._critic))
 
+    def is_off_policy(self):
+        return True
+
     def store_episode(self, rollouts):
         self._num_updates = (
             mpi_sum(len(rollouts["ac"]))
@@ -119,9 +122,9 @@ class SACAgent(BaseAgent):
             )
             for missing_key in missing.missing_keys:
                 if "stds" not in missing_key:
-                    logger.warn("Missing key", missing_key)
+                    logger.warning("Missing key", missing_key)
             if len(missing.unexpected_keys) > 0:
-                logger.warn("Unexpected keys", missing.unexpected_keys)
+                logger.warning("Unexpected keys", missing.unexpected_keys)
             self._network_cuda(self._config.device)
             return
 

@@ -110,11 +110,15 @@ class DACAgent(BaseAgent):
 
         self._log_creation()
 
-    def _predict_reward(self, ob, ac):
-        if self._config.gail_no_action:
+    def _predict_reward(self, ob, ob_next, ac):
+        if not self._config.gail_use_action:
             ac = None
+        if not self._config.gail_use_next_ob:
+            ob_next = None
+
+        self._discriminator.eval()
         with torch.no_grad():
-            ret = self._discriminator(ob, ac)
+            ret = self._discriminator(ob, ob_next, ac)
             eps = 1e-10
             s = torch.sigmoid(ret)
             if self._config.gail_reward == "vanilla":
@@ -123,17 +127,31 @@ class DACAgent(BaseAgent):
                 reward = (s + eps).log() - (1 - s + eps).log()
             elif self._config.gail_reward == "d":
                 reward = ret
+            elif self._config.gail_reward == "amp":
+                ret = torch.clamp(ret, 0, 1) - 1
+                reward = 1 - ret ** 2
+        self._discriminator.train()
         return reward
 
-    def predict_reward(self, ob, ac=None):
-        ob = self.normalize(ob)
-        ob = to_tensor(ob, self._config.device)
-        if self._config.gail_no_action:
-            ac = None
-        if ac is not None:
-            ac = to_tensor(ac, self._config.device)
+    def predict_reward(self, ob, ob_next=None, ac=None):
+        def get_tensor(v):
+            if isinstance(v, list):
+                return obs2tensor(v, self._config.device)
+            else:
+                return to_tensor(v, self._config.device)
 
-        reward = self._predict_reward(ob, ac)
+        ob = get_tensor(self.normalize(ob))
+        if self._config.gail_use_next_ob:
+            ob_next = get_tensor(self.normalize(ob_next))
+        else:
+            ob_next = None
+
+        if self._config.gail_use_action:
+            ac = get_tensor(ac)
+        else:
+            ac = None
+
+        reward = self._predict_reward(ob, ob_next, ac)
         return reward.cpu().item()
 
     def _log_creation(self):
@@ -143,6 +161,9 @@ class DACAgent(BaseAgent):
                 "The discriminator has %d parameters",
                 count_parameters(self._discriminator),
             )
+
+    def is_off_policy(self):
+        return True
 
     def store_episode(self, rollouts):
         self._rl_agent.store_episode(rollouts)
@@ -182,8 +203,6 @@ class DACAgent(BaseAgent):
     def train(self):
         train_info = Info()
 
-        self._discriminator_lr_scheduler.step()
-
         if self._update_iter % self._config.discriminator_update_freq == 0:
             self._num_updates = 1
             for _ in range(self._num_updates):
@@ -195,6 +214,7 @@ class DACAgent(BaseAgent):
                     expert_data = next(self._data_iter)
                 _train_info = self._update_discriminator(policy_data, expert_data)
                 train_info.add(_train_info)
+            self._discriminator_lr_scheduler.step()
 
         _train_info = self._rl_agent.train()
         train_info.add(_train_info)

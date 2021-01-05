@@ -2,6 +2,8 @@
 
 import argparse
 
+import numpy as np
+
 
 def str2bool(v):
     return v.lower() == "true"
@@ -33,9 +35,20 @@ def create_parser():
 
     # environment
     parser.add_argument(
-        "--env", type=str, default="Hopper-v2", help="environment name",
+        "--env",
+        type=str,
+        default="Hopper-v2",
+        help="environment name",
     )
     parser.add_argument("--seed", type=int, default=123)
+
+    # algorithm
+    parser.add_argument(
+        "--algo",
+        type=str,
+        default="sac",
+        choices=["sac", "ppo", "ddpg", "td3", "bc", "gail", "dac"],
+    )
 
     add_method_arguments(parser)
 
@@ -43,18 +56,15 @@ def create_parser():
 
 
 def add_method_arguments(parser):
-    # algorithm
-    parser.add_argument(
-        "--algo",
-        type=str,
-        default="sac",
-        choices=["sac", "ppo", "ddpg", "td3", "bc", "gail", "dac", "ps"],
-    )
-
     # training
     parser.add_argument("--is_train", type=str2bool, default=True)
-    parser.add_argument("--resume", type=str2bool, default=True)
     parser.add_argument("--init_ckpt_path", type=str, default=None)
+    parser.add_argument(
+        "--init_ckpt_pretrained",
+        type=str2bool,
+        default=False,
+        help="use init_ckpt_path as pretrained model and start training from step=0",
+    )
     parser.add_argument("--gpu", type=int, default=None)
 
     # evaluation
@@ -76,7 +86,6 @@ def add_method_arguments(parser):
     parser.add_argument("--notes", type=str, default="")
 
     # log
-    parser.add_argument("--average_info", type=str2bool, default=True)
     parser.add_argument("--log_interval", type=int, default=1)
     parser.add_argument("--evaluate_interval", type=int, default=10)
     parser.add_argument("--ckpt_interval", type=int, default=200)
@@ -87,8 +96,8 @@ def add_method_arguments(parser):
         default=False,
         help="set it True if you want to use wandb",
     )
-    parser.add_argument("--wandb_entity", type=str, default="clvr")
-    parser.add_argument("--wandb_project", type=str, default="robot-learning")
+    parser.add_argument("--wandb_entity", type=str, default=None)
+    parser.add_argument("--wandb_project", type=str, default=None)
     parser.add_argument("--record_video", type=str2bool, default=True)
     parser.add_argument("--record_video_caption", type=str2bool, default=True)
     try:
@@ -100,7 +109,7 @@ def add_method_arguments(parser):
     parser.add_argument("--ob_norm", type=str2bool, default=True)
     parser.add_argument("--max_ob_norm_step", type=int, default=int(1e8))
     parser.add_argument(
-        "--clip_obs", type=float, default=200, help="the clip range of observation"
+        "--clip_obs", type=float, default=np.inf, help="the clip range of observation"
     )
     parser.add_argument(
         "--clip_range",
@@ -113,6 +122,8 @@ def add_method_arguments(parser):
     parser.add_argument(
         "--batch_size", type=int, default=128, help="the sample batch size"
     )
+
+    parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
 
     add_policy_arguments(parser)
 
@@ -154,12 +165,6 @@ def add_method_arguments(parser):
         elif args.gail_rl_algo == "td3":
             add_td3_arguments(parser)
 
-    if args.algo in ["ps"]:
-        add_il_arguments(parser)
-        add_gail_arguments(parser)
-        add_ppo_arguments(parser)
-        add_ps_arguments(parser)
-
     return parser
 
 
@@ -171,6 +176,7 @@ def add_policy_arguments(parser):
     parser.add_argument(
         "--policy_activation", type=str, default="relu", choices=["relu", "elu", "tanh"]
     )
+    parser.add_argument("--use_log_std_bias", type=str2bool, default=True)
     parser.add_argument("--tanh_policy", type=str2bool, default=True)
     parser.add_argument("--gaussian_policy", type=str2bool, default=True)
 
@@ -197,6 +203,9 @@ def add_policy_arguments(parser):
         "--actor_lr", type=float, default=3e-4, help="the learning rate of the actor"
     )
     parser.add_argument(
+        "--actor_weight_decay", type=float, default=0, help="l2 regularizatoin"
+    )
+    parser.add_argument(
         "--critic_lr", type=float, default=3e-4, help="the learning rate of the critic"
     )
     parser.add_argument(
@@ -208,6 +217,7 @@ def add_policy_arguments(parser):
 
     parser.add_argument("--log_std_min", type=float, default=-10)
     parser.add_argument("--log_std_max", type=float, default=2)
+    parser.add_argument("--target_init_std", type=float, default=0.5)
 
     # absorbing state
     parser.add_argument("--absorbing_state", type=str2bool, default=False)
@@ -218,10 +228,10 @@ def add_rl_arguments(parser):
         "--rl_discount_factor", type=float, default=0.99, help="the discount factor"
     )
     parser.add_argument("--warm_up_steps", type=int, default=0)
+    parser.add_argument("--rollout_length", type=int, default=2048)
 
 
 def add_on_policy_arguments(parser):
-    parser.add_argument("--rollout_length", type=int, default=2000)
     parser.add_argument("--gae_lambda", type=float, default=0.95)
     parser.add_argument("--advantage_norm", type=str2bool, default=True)
 
@@ -231,13 +241,13 @@ def add_off_policy_arguments(parser):
         "--buffer_size", type=int, default=int(1e6), help="the size of the buffer"
     )
     parser.set_defaults(warm_up_steps=1000)
+    parser.set_defaults(rollout_length=1)
 
 
 def add_sac_arguments(parser):
     add_rl_arguments(parser)
     add_off_policy_arguments(parser)
 
-    parser.add_argument("--reward_scale", type=float, default=1.0, help="reward scale")
     parser.add_argument("--actor_update_freq", type=int, default=2)
     parser.add_argument("--critic_target_update_freq", type=int, default=2)
     parser.add_argument("--target_entropy", type=float, default=None)
@@ -251,26 +261,32 @@ def add_sac_arguments(parser):
     parser.set_defaults(ckpt_interval=10000)
     parser.set_defaults(log_interval=500)
     parser.set_defaults(critic_soft_update_weight=0.99)
-    parser.set_defaults(buffer_size=100000)
+    parser.set_defaults(buffer_size=1000000)
     parser.set_defaults(critic_ensemble=2)
     parser.set_defaults(ob_norm=False)
 
 
 def add_ppo_arguments(parser):
+    """
+    Following Andrychowicz et. al. 2020
+    'What Matters in On-Policy Reinforcement Learning? A Large-Scale Empirical Study'
+    """
     add_rl_arguments(parser)
     add_on_policy_arguments(parser)
 
     parser.add_argument("--ppo_clip", type=float, default=0.2)
     parser.add_argument("--value_loss_coeff", type=float, default=0.5)
     parser.add_argument("--action_loss_coeff", type=float, default=1.0)
-    parser.add_argument("--entropy_loss_coeff", type=float, default=1e-4)
+    parser.add_argument("--entropy_loss_coeff", type=float, default=0)
 
-    parser.add_argument("--ppo_epoch", type=int, default=5)
+    parser.add_argument("--ppo_epoch", type=int, default=10)
     parser.add_argument("--max_grad_norm", type=float, default=None)
     parser.add_argument("--actor_update_freq", type=int, default=1)
     parser.set_defaults(ob_norm=True)
     parser.set_defaults(evaluate_interval=20)
     parser.set_defaults(ckpt_interval=20)
+
+    parser.set_defaults(policy_activation="tanh")
 
 
 def add_ddpg_arguments(parser):
@@ -314,7 +330,12 @@ def add_td3_arguments(parser):
 
 def add_il_arguments(parser):
     parser.add_argument("--demo_path", type=str, default=None, help="path to demos")
-    parser.add_argument("--demo_low_level", type=str2bool, default=False, help="use low level actions for training")
+    parser.add_argument(
+        "--demo_low_level",
+        type=str2bool,
+        default=False,
+        help="use low level actions for training",
+    )
     parser.add_argument(
         "--demo_subsample_interval",
         type=int,
@@ -333,10 +354,11 @@ def add_il_arguments(parser):
 def add_bc_arguments(parser):
     parser.set_defaults(gaussian_policy=False)
     parser.set_defaults(max_global_step=100)
-    parser.set_defaults(evaluate_interval=100)
+    parser.set_defaults(evaluate_interval=10)
+    parser.set_defaults(num_eval=50)
     parser.set_defaults(ob_norm=False)
     parser.add_argument(
-        "--bc_lr", type=float, default=1e-3, help="learning rate for bc"
+        "--bc_lr", type=float, default=3e-4, help="learning rate for bc"
     )
     parser.add_argument(
         "--val_split",
@@ -349,7 +371,13 @@ def add_bc_arguments(parser):
 def add_gail_arguments(parser):
     parser.add_argument("--gail_entropy_loss_coeff", type=float, default=0.0)
     parser.add_argument(
-        "--gail_reward", type=str, default="vanilla", choices=["vanilla", "gan", "d"]
+        "--gail_reward",
+        type=str,
+        default="vanilla",
+        choices=["vanilla", "gan", "d", "amp"],
+    )
+    parser.add_argument(
+        "--discriminator_loss_type", type=str, default="gan", choices=["gan", "lsgan"]
     )
     parser.add_argument("--discriminator_lr", type=float, default=1e-4)
     parser.add_argument("--discriminator_mlp_dim", type=str2intlist, default=[256, 256])
@@ -360,7 +388,10 @@ def add_gail_arguments(parser):
         choices=["relu", "elu", "tanh"],
     )
     parser.add_argument("--discriminator_update_freq", type=int, default=4)
-    parser.add_argument("--gail_no_action", type=str2bool, default=False)
+    parser.add_argument("--discriminator_replay_buffer", type=str2bool, default=False)
+    parser.add_argument("--discriminator_buffer_size", type=int, default=100)
+    parser.add_argument("--gail_use_action", type=str2bool, default=True)
+    parser.add_argument("--gail_use_next_ob", type=str2bool, default=False)
     parser.add_argument("--gail_env_reward", type=float, default=0.0)
     parser.add_argument("--gail_grad_penalty_coeff", type=float, default=10.0)
 
@@ -378,11 +409,6 @@ def add_dac_arguments(parser):
     parser.set_defaults(actor_update_delay=1000)
     parser.set_defaults(batch_size=100)
     parser.set_defaults(gail_reward="d")
-
-
-def add_ps_arguments(parser):
-    parser.add_argument("--ps_dir", type=str, default="./log")
-    parser.add_argument("--ps_ckpts", type=str, default=None)
 
 
 def argparser():

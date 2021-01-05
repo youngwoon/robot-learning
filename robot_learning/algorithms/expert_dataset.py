@@ -1,6 +1,7 @@
 import os
 import pickle
 import glob
+from collections import deque
 
 import torch
 from torch.utils.data import Dataset
@@ -28,6 +29,9 @@ class ExpertDataset(Dataset):
         sample_range_end=1.0,
     ):
         self.train = train  # training set or test set
+        self.initial_states = deque(maxlen=10000)
+        self.initial_obs = deque(maxlen=10000)
+        self.terminal_obs = deque(maxlen=10000)
 
         self._data = []
         self._ac_space = ac_space
@@ -62,6 +66,9 @@ class ExpertDataset(Dataset):
                         length = len(demo["low_level_actions"])
                         start = int(length * sample_range_start)
                         end = int(length * sample_range_end)
+                        self.initial_states.append(demo["states"][0])
+                        self.initial_obs.append(demo["low_level_obs"][0])
+                        self.terminal_obs.append(demo["low_level_obs"][-1])
                         for i in range(start + offset, end, subsample_interval):
                             transition = {
                                 "ob": demo["low_level_obs"][i],
@@ -103,7 +110,7 @@ class ExpertDataset(Dataset):
 
                         self._data.append(transition)
 
-        logger.warn(
+        logger.warning(
             "Load %d demonstrations with %d states from %d files",
             num_demos,
             len(self._data),
@@ -143,6 +150,7 @@ class ExpertDataset(Dataset):
 
     def _get_demo_files(self, demo_file_path):
         demos = []
+        demo_file_path = os.path.expanduser(demo_file_path)
         if not demo_file_path.endswith(".pkl"):
             demo_file_path = demo_file_path + "*.pkl"
         for f in glob.glob(demo_file_path):

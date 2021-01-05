@@ -4,6 +4,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# from https://github.com/denisyarats/drq/blob/master/utils.py#L62
+def weight_init(tensor):
+    if isinstance(tensor, nn.Linear):
+        nn.init.orthogonal_(tensor.weight.data)
+        tensor.bias.data.fill_(0.0)
+    elif isinstance(tensor, nn.Conv2d) or isinstance(tensor, nn.ConvTranspose2d):
+        tensor.weight.data.fill_(0.0)
+        tensor.bias.data.fill_(0.0)
+        mid = tensor.weight.size(2) // 2
+        gain = nn.init.calculate_gain("relu")
+        nn.init.orthogonal_(tensor.weight.data[:, :, mid, mid], gain)
+        # nn.init.orthogonal_(tensor.weight.data, gain)
+
+
+def weight_init_small(tensor):
+    nn.init.orthogonal_(tensor.weight.data, gain=0.01)
+    tensor.bias.data.fill_(0.0)
+
+
 class CNN(nn.Module):
     def __init__(self, config, input_dim):
         super().__init__()
@@ -36,7 +55,7 @@ class CNN(nn.Module):
 
         out = self.fc(out)
         out = self.ln(out)
-        out = F.tanh(out)
+        out = torch.tanh(out)
 
         return out
 
@@ -50,23 +69,15 @@ class CNN(nn.Module):
             conv.bias = source.convs[i].bias
 
 
-# from https://github.com/denisyarats/drq/blob/master/utils.py#L62
-def weight_init(tensor):
-    if isinstance(tensor, nn.Linear):
-        nn.init.orthogonal_(tensor.weight.data)
-        tensor.bias.data.fill_(0.0)
-    elif isinstance(tensor, nn.Conv2d) or isinstance(tensor, nn.ConvTranspose2d):
-        tensor.weight.data.fill_(0.0)
-        tensor.bias.data.fill_(0.0)
-        mid = tensor.weight.size(2) // 2
-        gain = nn.init.calculate_gain("relu")
-        nn.init.orthogonal_(tensor.weight.data[:, :, mid, mid], gain)
-        # nn.init.orthogonal_(tensor.weight.data, gain)
-
-
 class MLP(nn.Module):
     def __init__(
-        self, config, input_dim, output_dim, hid_dims=[], activation_fn=None,
+        self,
+        config,
+        input_dim,
+        output_dim,
+        hid_dims=[],
+        activation_fn=None,
+        small_weight=False,
     ):
         super().__init__()
         self.activation_fn = activation_fn
@@ -75,12 +86,18 @@ class MLP(nn.Module):
 
         self.fcs = nn.ModuleList()
         prev_dim = input_dim
-        for d in hid_dims + [output_dim]:
+        for d in hid_dims:
             self.fcs.append(nn.Linear(prev_dim, d))
+            self.fcs[-1].apply(weight_init)
             prev_dim = d
 
+        self.fcs.append(nn.Linear(prev_dim, output_dim))
+        if small_weight:
+            self.fcs[-1].apply(weight_init_small)
+        else:
+            self.fcs[-1].apply(weight_init)
+
         self.output_dim = output_dim
-        self.apply(weight_init)
 
     def forward(self, ob):
         out = ob

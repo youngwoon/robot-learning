@@ -22,6 +22,7 @@ from ..utils.pytorch import (
     sync_networks,
     sync_grads,
     to_tensor,
+    obs2tensor,
 )
 
 
@@ -34,13 +35,19 @@ class GAILAgent(BaseAgent):
 
         if self._config.gail_rl_algo == "ppo":
             self._rl_agent = PPOAgent(config, ob_space, ac_space, env_ob_space)
-        self._rl_agent.set_reward_function(self._predict_reward)
+        self._rl_agent.set_reward_function(self.predict_reward)
 
         # build up networks
         self._discriminator = Discriminator(
-            config, ob_space, ac_space if not config.gail_no_action else None
+            config,
+            ob_space,
+            ob_space if config.gail_use_next_ob else None,
+            ac_space if config.gail_use_action else None,
         )
-        self._discriminator_loss = nn.BCEWithLogitsLoss()
+        if config.discriminator_loss_type == "gan":
+            self._discriminator_loss = nn.BCEWithLogitsLoss()
+        elif config.discriminator_loss_type == "lsgan":
+            self._discriminator_loss = nn.MSELoss()
         self._network_cuda(config.device)
 
         # build optimizers
@@ -51,57 +58,59 @@ class GAILAgent(BaseAgent):
         # build learning rate scheduler
         self._discriminator_lr_scheduler = StepLR(
             self._discriminator_optim,
-            step_size=self._config.max_global_step // self._config.rollout_length // 5,
+            step_size=self._config.max_global_step // self._config.rollout_length,
             gamma=0.5,
         )
 
         # expert dataset
-        if config.is_train:
-            self._dataset = ExpertDataset(
-                config.demo_path,
-                config.demo_subsample_interval,
-                ac_space,
-                use_low_level=config.demo_low_level,
-                sample_range_start=config.demo_sample_range_start,
-                sample_range_end=config.demo_sample_range_end,
-            )
-            self._data_loader = torch.utils.data.DataLoader(
-                self._dataset,
-                batch_size=self._config.batch_size,
-                shuffle=True,
-                drop_last=True,
-            )
-            self._data_iter = iter(self._data_loader)
+        self._dataset = ExpertDataset(
+            config.demo_path,
+            config.demo_subsample_interval,
+            ac_space,
+            use_low_level=config.demo_low_level,
+            sample_range_start=config.demo_sample_range_start,
+            sample_range_end=config.demo_sample_range_end,
+        )
+        self._data_loader = torch.utils.data.DataLoader(
+            self._dataset,
+            batch_size=self._config.batch_size,
+            shuffle=True,
+            drop_last=True,
+        )
+        self._data_iter = iter(self._data_loader)
 
         # policy dataset
         sampler = RandomSampler()
+        keys = ["ob"]
+        if config.gail_use_action:
+            keys.append("ac")
+        if config.gail_use_next_ob:
+            keys.append("ob_next")
+
         self._buffer = ReplayBuffer(
-            [
-                "ob",
-                "ob_next",
-                "ac",
-                "done",
-                "rew",
-                "ret",
-                "adv",
-                "ac_before_activation",
-            ],
-            config.rollout_length,
+            keys,
+            config.discriminator_buffer_size,
             sampler.sample_func,
         )
-
-        self._rl_agent.set_buffer(self._buffer)
 
         # update observation normalizer with dataset
         self.update_normalizer()
 
         self._log_creation()
 
-    def _predict_reward(self, ob, ac):
-        if self._config.gail_no_action:
+    def set_buffer(self, buffer):
+        self._buffer = buffer
+        self._rl_agent.set_buffer(buffer)
+
+    def _predict_reward(self, ob, ob_next, ac):
+        if not self._config.gail_use_action:
             ac = None
+        if not self._config.gail_use_next_ob:
+            ob_next = None
+
+        self._discriminator.eval()
         with torch.no_grad():
-            ret = self._discriminator(ob, ac)
+            ret = self._discriminator(ob, ob_next, ac)
             eps = 1e-10
             s = torch.sigmoid(ret)
             if self._config.gail_reward == "vanilla":
@@ -110,18 +119,32 @@ class GAILAgent(BaseAgent):
                 reward = (s + eps).log() - (1 - s + eps).log()
             elif self._config.gail_reward == "d":
                 reward = ret
+            elif self._config.gail_reward == "amp":
+                ret = torch.clamp(ret, 0, 1) - 1
+                reward = 1 - ret ** 2
+        self._discriminator.train()
         return reward
 
-    def predict_reward(self, ob, ac=None):
-        ob = self.normalize(ob)
-        ob = to_tensor(ob, self._config.device)
-        if self._config.gail_no_action:
-            ac = None
-        if ac is not None:
-            ac = to_tensor(ac, self._config.device)
+    def predict_reward(self, ob, ob_next=None, ac=None):
+        def get_tensor(v):
+            if isinstance(v, list):
+                return obs2tensor(v, self._config.device)
+            else:
+                return to_tensor(v, self._config.device)
 
-        reward = self._predict_reward(ob, ac)
-        return reward.cpu().item()
+        ob = get_tensor(self.normalize(ob))
+        if self._config.gail_use_next_ob:
+            ob_next = get_tensor(self.normalize(ob_next))
+        else:
+            ob_next = None
+
+        if self._config.gail_use_action:
+            ac = get_tensor(ac)
+        else:
+            ac = None
+
+        reward = self._predict_reward(ob, ob_next, ac)
+        return reward.cpu().detach().numpy().squeeze()
 
     def _log_creation(self):
         if self._config.is_chef:
@@ -131,7 +154,11 @@ class GAILAgent(BaseAgent):
                 count_parameters(self._discriminator),
             )
 
+    def is_off_policy(self):
+        return False
+
     def store_episode(self, rollouts):
+        self._buffer.store_episode(rollouts)
         self._rl_agent.store_episode(rollouts)
 
     def state_dict(self):
@@ -183,11 +210,16 @@ class GAILAgent(BaseAgent):
             else:
                 super().update_normalizer(obs)
                 self._rl_agent.update_normalizer(obs)
+                try:
+                    expert_data = next(self._data_iter)
+                except StopIteration:
+                    self._data_iter = iter(self._data_loader)
+                    expert_data = next(self._data_iter)
+                super().update_normalizer(expert_data["ob"])
+                self._rl_agent.update_normalizer(expert_data["ob"])
 
     def train(self):
         train_info = Info()
-
-        self._discriminator_lr_scheduler.step()
 
         num_batches = (
             self._config.rollout_length
@@ -209,41 +241,48 @@ class GAILAgent(BaseAgent):
         _train_info = self._rl_agent.train()
         train_info.add(_train_info)
 
-        for _ in range(num_batches):
-            try:
-                expert_data = next(self._data_iter)
-            except StopIteration:
-                self._data_iter = iter(self._data_loader)
-                expert_data = next(self._data_iter)
-            self.update_normalizer(expert_data["ob"])
+        self._discriminator_lr_scheduler.step()
 
+        if not self._config.discriminator_replay_buffer:
+            self._buffer.clear()
         return train_info.get_dict(only_scalar=True)
 
     def _update_discriminator(self, policy_data, expert_data):
         info = Info()
-
         _to_tensor = lambda x: to_tensor(x, self._config.device)
-        # pre-process observations
-        p_o = policy_data["ob"]
-        p_o = self.normalize(p_o)
+
+        p_o = self.normalize(policy_data["ob"])
         p_o = _to_tensor(p_o)
 
-        e_o = expert_data["ob"]
-        e_o = self.normalize(e_o)
+        e_o = self.normalize(expert_data["ob"])
         e_o = _to_tensor(e_o)
 
-        if self._config.gail_no_action:
-            p_ac = None
-            e_ac = None
+        if self._config.gail_use_next_ob:
+            p_o_next = self.normalize(policy_data["ob_next"])
+            p_o_next = _to_tensor(p_o_next)
+
+            e_o_next = self.normalize(expert_data["ob_next"])
+            e_o_next = _to_tensor(e_o_next)
         else:
+            p_o_next = None
+            e_o_next = None
+
+        if self._config.gail_use_action:
             p_ac = _to_tensor(policy_data["ac"])
             e_ac = _to_tensor(expert_data["ac"])
+        else:
+            p_ac = None
+            e_ac = None
 
-        p_logit = self._discriminator(p_o, p_ac)
-        e_logit = self._discriminator(e_o, e_ac)
+        p_logit = self._discriminator(p_o, p_o_next, p_ac)
+        e_logit = self._discriminator(e_o, e_o_next, e_ac)
 
-        p_output = torch.sigmoid(p_logit)
-        e_output = torch.sigmoid(e_logit)
+        if self._config.discriminator_loss_type == "lsgan":
+            p_output = p_logit
+            e_output = e_logit
+        else:
+            p_output = torch.sigmoid(p_logit)
+            e_output = torch.sigmoid(e_logit)
 
         p_loss = self._discriminator_loss(
             p_logit, torch.zeros_like(p_logit).to(self._config.device)
@@ -256,7 +295,7 @@ class GAILAgent(BaseAgent):
         entropy = torch.distributions.Bernoulli(logits=logits).entropy().mean()
         entropy_loss = -self._config.gail_entropy_loss_coeff * entropy
 
-        grad_pen = self._compute_grad_pen(p_o, p_ac, e_o, e_ac)
+        grad_pen = self._compute_grad_pen(p_o, p_o_next, p_ac, e_o, e_o_next, e_ac)
         grad_pen_loss = self._config.gail_grad_penalty_coeff * grad_pen
 
         gail_loss = p_loss + e_loss + entropy_loss + grad_pen_loss
@@ -279,7 +318,9 @@ class GAILAgent(BaseAgent):
 
         return mpi_average(info.get_dict(only_scalar=True))
 
-    def _compute_grad_pen(self, policy_ob, policy_ac, expert_ob, expert_ac):
+    def _compute_grad_pen(
+        self, policy_ob, policy_ob_next, policy_ac, expert_ob, expert_ob_next, expert_ac
+    ):
         batch_size = self._config.batch_size
         alpha = torch.rand(batch_size, 1, device=self._config.device)
 
@@ -298,13 +339,22 @@ class GAILAgent(BaseAgent):
 
         interpolated_ob = blend_dict(policy_ob, expert_ob, alpha)
         inputs = list(interpolated_ob.values())
+
+        if policy_ob_next is not None:
+            interpolated_ob_next = blend_dict(policy_ob_next, expert_ob_next, alpha)
+            inputs = inputs + list(interpolated_ob_next.values())
+        else:
+            interpolated_ob_next = None
+
         if policy_ac is not None:
             interpolated_ac = blend_dict(policy_ac, expert_ac, alpha)
-            inputs = inputs + list(interpolated_ob.values())
+            inputs = inputs + list(interpolated_ac.values())
         else:
             interpolated_ac = None
 
-        interpolated_logit = self._discriminator(interpolated_ob, interpolated_ac)
+        interpolated_logit = self._discriminator(
+            interpolated_ob, interpolated_ob_next, interpolated_ac
+        )
         ones = torch.ones(interpolated_logit.size(), device=self._config.device)
 
         grad = autograd.grad(

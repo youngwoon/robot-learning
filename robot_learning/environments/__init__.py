@@ -1,5 +1,5 @@
 """
-Define all environments and provide helper functions to load environments.
+Provide helper functions to load environments.
 """
 
 # OpenAI gym interface
@@ -9,28 +9,6 @@ import dmc2gym
 from ..utils.logger import logger
 from ..utils.gym_env import DictWrapper, FrameStackWrapper, GymWrapper, AbsorbingWrapper
 from ..utils.subproc_vec_env import SubprocVecEnv
-
-
-REGISTERED_ENVS = {}
-
-
-def register_env(target_class):
-    REGISTERED_ENVS[target_class.__name__] = target_class
-
-
-def get_env(name):
-    """
-    Gets the environment class given @name.
-    """
-    if name not in REGISTERED_ENVS:
-        logger.warn(
-            "Unknown environment name: {}\nAvailable environments: {}".format(
-                name, ", ".join(REGISTERED_ENVS)
-            )
-        )
-        logger.warn("Instead, query gym environments")
-        return None
-    return REGISTERED_ENVS[name]
 
 
 def make_env(name, config=None):
@@ -43,15 +21,11 @@ def make_env(name, config=None):
 
         config, unparsed = argparser()
 
-    env = get_env(name)
-    if env is None:
-        return get_gym_env(name, config)
-
-    return env(config)
+    return get_gym_env(name, config)
 
 
 def get_gym_env(env_id, config):
-    if env_id.startswith("dm"):
+    if env_id.startswith("dm."):
         # environment name of dm_control: dm.DOMAIN_NAME.TASK_NAME
         _, domain_name, task_name = env_id.split(".")
         env = dmc2gym.make(
@@ -70,9 +44,9 @@ def get_gym_env(env_id, config):
         try:
             env = gym.make(env_id, **env_kwargs)
         except Exception as e:
-            logger.warn("Failed to launch an environment with config.")
-            logger.warn(e)
-            logger.warn("Launch an environment without config.")
+            logger.warning("Failed to launch an environment with config.")
+            logger.warning(e)
+            logger.warning("Launch an environment without config.")
             env = gym.make(env_id)
         env.seed(config.seed)
         env = GymWrapper(
@@ -82,12 +56,18 @@ def get_gym_env(env_id, config):
             width=config.screen_width,
             channels_first=True,
             frame_skip=config.action_repeat,
-            return_state=(config.encoder_type == "cnn" and config.asym_ac)
+            return_state=(config.encoder_type == "cnn" and config.asym_ac),
         )
 
-    env = DictWrapper(env, return_state=(config.encoder_type == "cnn" and config.asym_ac))
+    env = DictWrapper(
+        env, return_state=(config.encoder_type == "cnn" and config.asym_ac)
+    )
     if config.encoder_type == "cnn":
-        env = FrameStackWrapper(env, frame_stack=3, return_state=(config.encoder_type == "cnn" and config.asym_ac))
+        env = FrameStackWrapper(
+            env,
+            frame_stack=3,
+            return_state=(config.encoder_type == "cnn" and config.asym_ac),
+        )
     if config.absorbing_state:
         env = AbsorbingWrapper(env)
 
@@ -121,17 +101,3 @@ def make_vec_env(env_id, num_env, config=None, env_kwargs=None):
         return lambda: get_gym_env(env_id, new_env_kwargs)
 
     return SubprocVecEnv([make_thunk(i) for i in range(num_env)])
-
-
-class EnvMeta(type):
-    """ Meta class for registering environments. """
-
-    def __new__(meta, name, bases, class_dict):
-        cls = super().__new__(meta, name, bases, class_dict)
-
-        # List all environments that should not be registered here.
-        _unregistered_envs = ["FurnitureEnv"]
-
-        if cls.__name__ not in _unregistered_envs:
-            register_env(cls)
-        return cls

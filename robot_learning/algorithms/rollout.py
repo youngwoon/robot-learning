@@ -2,8 +2,6 @@
 Runs rollouts (RolloutRunner class) and collects transitions using Rollout class.
 """
 
-import random
-import pickle
 from collections import defaultdict
 
 import numpy as np
@@ -44,22 +42,22 @@ class Rollout(object):
 
 class RolloutRunner(object):
     """
-    Run rollout given environment and policy.
+    Run rollout given an environment and policy.
     """
 
-    def __init__(self, config, env, env_eval, pi):
+    def __init__(self, config, env, env_eval, agent):
         """
         Args:
             config: configurations for the environment.
-            env: environment.
-            pi: policy.
+            env: training environment.
+            env_eval: testing environment.
+            agent: policy.
         """
-
         self._config = config
         self._env = env
         self._env_eval = env_eval
-        self._pi = pi
-        self._exclude_rollout_log = ["episode_sucess_state"]
+        self._agent = agent
+        self._exclude_rollout_log = ["episode_success_state"]
 
     def run(
         self,
@@ -82,10 +80,9 @@ class RolloutRunner(object):
             raise ValueError("Both every_steps and every_episodes cannot be None")
 
         config = self._config
-        device = config.device
         env = self._env if is_train else self._env_eval
-        pi = self._pi
-        il = hasattr(pi, "predict_reward")
+        agent = self._agent
+        il = hasattr(agent, "predict_reward")
 
         # initialize rollout buffer
         rollout = Rollout()
@@ -100,36 +97,30 @@ class RolloutRunner(object):
             ep_rew_rl = 0
             if il:
                 ep_rew_il = 0
-            ob = env.reset()
+            ob_next = env.reset()
 
             # run rollout
             while not done:
+                ob = ob_next
+
                 # sample action from policy
                 if step < config.warm_up_steps:
                     ac, ac_before_activation = env.action_space.sample(), 0
                 else:
-                    ac, ac_before_activation = pi.act(ob, is_train=is_train)
-
-                rollout.add(
-                    {"ob": ob, "ac": ac, "ac_before_activation": ac_before_activation}
-                )
-
-                if il:
-                    reward_il = pi.predict_reward(ob, ac)
+                    ac, ac_before_activation = agent.act(ob, is_train=is_train)
 
                 # take a step
-                ob, reward, done, info = env.step(ac)
-                rollout.add({"ob_next": ob})
+                ob_next, reward, done, info = env.step(ac)
 
-                # replace reward
                 if il:
+                    reward_il = agent.predict_reward(ob, ob_next, ac)
                     reward_rl = (
-                        1 - config.gail_env_reward
-                    ) * reward_il + config.gail_env_reward * reward
+                        (1 - config.gail_env_reward) * reward_il
+                        + config.gail_env_reward * reward * config.reward_scale
+                    )
                 else:
-                    reward_rl = reward
+                    reward_rl = reward * config.reward_scale
 
-                rollout.add({"done": done, "rew": reward})
                 step += 1
                 ep_len += 1
                 ep_rew += reward
@@ -143,8 +134,16 @@ class RolloutRunner(object):
                     done_mask = 1
 
                 rollout.add(
-                    {"done_mask": done_mask}
-                )  # -1 absorbing, 0 done, 1 not done
+                    {
+                        "ob": ob,
+                        "ob_next": ob_next,
+                        "ac": ac,
+                        "ac_before_activation": ac_before_activation,
+                        "done": done,
+                        "rew": reward,
+                        "done_mask": done_mask,  # -1 absorbing, 0 done, 1 not done
+                    }
+                )
 
                 reward_info.add(info)
 
@@ -187,20 +186,18 @@ class RolloutRunner(object):
             if every_episodes is not None and episode % every_episodes == 0:
                 yield rollout.get(), ep_info.get_dict(only_scalar=True)
 
-    def run_episode(self, max_step=10000, is_train=True, record_video=False):
+    def run_episode(self, is_train=True, record_video=False):
         """
         Runs one episode and returns the rollout (mainly for evaluation).
 
         Args:
-            max_step: maximum number of steps of the rollout.
             is_train: whether rollout is for training or evaluation.
             record_video: record video of rollout if True.
         """
         config = self._config
-        device = config.device
         env = self._env if is_train else self._env_eval
-        pi = self._pi
-        il = hasattr(pi, "predict_reward")
+        agent = self._agent
+        il = hasattr(agent, "predict_reward")
 
         # initialize rollout buffer
         rollout = Rollout()
@@ -213,35 +210,41 @@ class RolloutRunner(object):
         if il:
             ep_rew_il = 0
 
-        ob = env.reset()
+        ob_next = env.reset()
 
-        self._record_frames = []
+        record_frames = []
         if record_video:
-            self._store_frame(env, ep_len, ep_rew)
+            record_frames.append(self._store_frame(env, ep_len, ep_rew))
 
         # run rollout
-        while not done and ep_len < max_step:
-            # sample action from policy
-            ac, ac_before_activation = pi.act(ob, is_train=is_train)
-            rollout.add(
-                {"ob": ob, "ac": ac, "ac_before_activation": ac_before_activation}
-            )
+        while not done:
+            ob = ob_next
 
-            if il:
-                reward_il = pi.predict_reward(ob, ac)
+            # sample action from policy
+            ac, ac_before_activation = agent.act(ob, is_train=is_train)
 
             # take a step
-            ob, reward, done, info = env.step(ac)
+            ob_next, reward, done, info = env.step(ac)
 
-            # replace reward
             if il:
+                reward_il = agent.predict_reward(ob, ob_next, ac)
                 reward_rl = (
                     1 - config.gail_env_reward
-                ) * reward_il + config.gail_env_reward * reward
+                ) * reward_il + config.gail_env_reward * reward * config.reward_scale
             else:
-                reward_rl = reward
+                reward_rl = reward * config.reward_scale
 
-            rollout.add({"done": done, "rew": reward})
+            rollout.add(
+                {
+                    "ob": ob,
+                    "ob_next": ob_next,
+                    "ac": ac,
+                    "ac_before_activation": ac_before_activation,
+                    "done": done,
+                    "rew": reward,
+                }
+            )
+
             ep_len += 1
             ep_rew += reward
             ep_rew_rl += reward_rl
@@ -259,10 +262,10 @@ class RolloutRunner(object):
                             "rew_rl": reward_rl,
                         }
                     )
-                self._store_frame(env, ep_len, ep_rew, frame_info)
+                record_frames.append(self._store_frame(env, ep_len, ep_rew, frame_info))
 
         # add last observation
-        rollout.add({"ob": ob})
+        rollout.add({"ob": ob_next})
 
         # compute average/sum of information
         ep_info = {"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl}
@@ -280,10 +283,10 @@ class RolloutRunner(object):
                 if k not in self._exclude_rollout_log and np.isscalar(v)
             },
         )
-        return rollout.get(), ep_info, self._record_frames
+        return rollout.get(), ep_info, record_frames
 
     def _store_frame(self, env, ep_len, ep_rew, info={}):
-        """ Renders a frame and stores in @self._record_frames. """
+        """ Renders a frame. """
         color = (200, 200, 200)
 
         # render video frame
@@ -292,13 +295,14 @@ class RolloutRunner(object):
             frame = frame[0]
         if np.max(frame) <= 1.0:
             frame *= 255.0
+        frame = frame.astype(np.uint8)
 
         h, w = frame.shape[:2]
-        if h < 500:
-            h, w = 500, 500
+        if h < 512:
+            h, w = 512, 512
             frame = cv2.resize(frame, (h, w))
         frame = np.concatenate([frame, np.zeros((h, w, 3))], 0)
-        scale = h / 500
+        scale = h / 512
 
         # add caption to video frame
         if self._config.record_video_caption:
@@ -346,4 +350,4 @@ class RolloutRunner(object):
                     cv2.LINE_AA,
                 )
 
-        self._record_frames.append(frame)
+        return frame

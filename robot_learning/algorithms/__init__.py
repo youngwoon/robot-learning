@@ -2,7 +2,6 @@
 from .sac_agent import SACAgent
 from .ppo_agent import PPOAgent
 from .ddpg_agent import DDPGAgent
-from .policy_sequencing_agent import PolicySequencingAgent
 
 # IL algorithms
 from .bc_agent import BCAgent
@@ -15,7 +14,6 @@ RL_ALGOS = {
     "ppo": PPOAgent,
     "ddpg": DDPGAgent,
     "td3": DDPGAgent,
-    "ps": PolicySequencingAgent,
 }
 
 
@@ -24,15 +22,3 @@ IL_ALGOS = {
     "gail": GAILAgent,
     "dac": DACAgent,
 }
-
-
-def get_agent_by_name(algo):
-    """
-    Returns RL or IL agent.
-    """
-    if algo in RL_ALGOS:
-        return RL_ALGOS[algo]
-    elif algo in IL_ALGOS:
-        return IL_ALGOS[algo]
-    else:
-        raise ValueError("--algo %s is not supported" % algo)

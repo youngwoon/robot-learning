@@ -16,8 +16,6 @@ from ..utils.mpi import mpi_average
 from ..utils.pytorch import (
     optimizer_cuda,
     count_parameters,
-    compute_gradient_norm,
-    compute_weight_norm,
     sync_networks,
     sync_grads,
     to_tensor,
@@ -79,6 +77,9 @@ class BCAgent(BaseAgent):
             logger.info("Creating a BC agent")
             logger.info("The actor has %d parameters", count_parameters(self._actor))
 
+    def is_off_policy(self):
+        return False
+
     def state_dict(self):
         return {
             "actor_state_dict": self._actor.state_dict(),
@@ -108,12 +109,6 @@ class BCAgent(BaseAgent):
         self._epoch += 1
         self._actor_lr_scheduler.step()
 
-        train_info.add(
-            {
-                "actor_grad_norm": compute_gradient_norm(self._actor),
-                "actor_weight_norm": compute_weight_norm(self._actor),
-            }
-        )
         train_info = train_info.get_dict(only_scalar=True)
         logger.info("BC loss %f", train_info["actor_loss"])
         return train_info

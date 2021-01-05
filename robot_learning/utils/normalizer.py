@@ -1,19 +1,20 @@
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 import numpy as np
 import gym.spaces
 
-from .mpi import mpi_average
+from .mpi import mpi_sum
+from .logger import logger
 
 
 class SubNormalizer:
-    def __init__(self, size, eps=1e-1, default_clip_range=np.inf, clip_obs=np.inf):
+    def __init__(self, size, eps=1e-6, clip_range=np.inf, clip_obs=np.inf):
         if isinstance(size, list):
             self.size = size
         else:
             self.size = [size]
         self.eps = eps
-        self.default_clip_range = default_clip_range
+        self.clip_range = clip_range
         self.clip_obs = clip_obs
         # some local information
         self.local_sum = np.zeros(self.size, np.float32)
@@ -44,9 +45,9 @@ class SubNormalizer:
 
     # sync the parameters across the cpus
     def sync(self, local_sum, local_sumsq, local_count):
-        local_sum[...] = mpi_average(local_sum)
-        local_sumsq[...] = mpi_average(local_sumsq)
-        local_count[...] = mpi_average(local_count)
+        local_sum[...] = mpi_sum(local_sum)
+        local_sumsq[...] = mpi_sum(local_sumsq)
+        local_count[...] = mpi_sum(local_count)
         return local_sum, local_sumsq, local_count
 
     def recompute_stats(self):
@@ -76,11 +77,19 @@ class SubNormalizer:
         )
 
     # normalize the observation
-    def normalize(self, v, clip_range=None):
+    def normalize(self, v):
         v = self._clip(v)
-        if clip_range is None:
-            clip_range = self.default_clip_range
-        return np.clip((v - self.mean) / (self.std), -clip_range, clip_range)
+        return np.clip((v - self.mean) / (self.std), -self.clip_range, self.clip_range)
+
+    def sample(self, alpha=1.0):
+        v = self.mean + np.random.normal(size=self.size) * self.std * alpha
+        if np.any(np.isnan(v)):
+            logger.error("Sample NaN")
+            logger.error("Mean %s", str(self.mean))
+            logger.error("Std %s", str(self.std))
+            logger.error("Sample %s", str(v))
+            raise ValueError
+        return v
 
     def state_dict(self):
         return {
@@ -103,27 +112,27 @@ class SubNormalizer:
         )
 
 
-class Normalizer:
-    def __init__(self, shape, eps=1e-1, default_clip_range=np.inf, clip_obs=np.inf):
+class Normalizer(object):
+    def __init__(self, shape, eps=1e-6, clip_range=np.inf, clip_obs=np.inf):
         if isinstance(shape, gym.spaces.Dict):
             self._shape = {k: list(v.shape) for k, v in shape.spaces.items()}
         elif isinstance(shape, dict):
             self._shape = shape
         else:
             self._shape = {"": shape}
-        print("New ob_norm with shape", self._shape)
+        logger.info("Initialize ob_norm with shape: " + str(self._shape))
 
         self._keys = sorted(self._shape.keys())
 
         self.sub_norm = {}
         for key in self._keys:
             self.sub_norm[key] = SubNormalizer(
-                self._shape[key], eps, default_clip_range, clip_obs
+                self._shape[key], eps, clip_range, clip_obs
             )
 
     # update the parameters of the normalizer
     def update(self, v):
-        if isinstance(v, list):
+        if isinstance(v, (list, deque)):
             if isinstance(v[0], dict):
                 v = OrderedDict(
                     [(k, np.asarray([x[k] for x in v])) for k in self._keys]
@@ -143,22 +152,25 @@ class Normalizer:
             self.sub_norm[k].recompute_stats()
 
     # normalize the observation
-    def _normalize(self, v, clip_range=None):
+    def _normalize(self, v):
         if not isinstance(v, dict):
-            return self.sub_norm[""].normalize(v, clip_range)
+            return self.sub_norm[""].normalize(v)
         return OrderedDict(
             [
-                (k, self.sub_norm[k].normalize(v_, clip_range))
+                (k, self.sub_norm[k].normalize(v_))
                 for k, v_ in v.items()
                 if k in self._keys
             ]
         )
 
-    def normalize(self, v, clip_range=None):
+    def normalize(self, v):
         if isinstance(v, list):
-            return [self._normalize(x, clip_range) for x in v]
+            return [self._normalize(x) for x in v]
         else:
-            return self._normalize(v, clip_range)
+            return self._normalize(v)
+
+    def sample(self, alpha=1.0):
+        return OrderedDict([(k, self.sub_norm[k].sample(alpha)) for k in self._keys])
 
     def state_dict(self):
         return OrderedDict([(k, self.sub_norm[k].state_dict()) for k in self._keys])

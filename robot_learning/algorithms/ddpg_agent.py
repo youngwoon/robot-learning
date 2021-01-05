@@ -71,6 +71,9 @@ class DDPGAgent(BaseAgent):
             logger.info("The actor has %d parameters", count_parameters(self._actor))
             logger.info("The critic has %d parameters", count_parameters(self._critic))
 
+    def is_off_policy(self):
+        return True
+
     def act(self, ob, is_train=True):
         """ Returns action and the actor's activation given an observation @ob. """
         ac, activation = super().act(ob, is_train=is_train)
@@ -145,7 +148,6 @@ class DDPGAgent(BaseAgent):
 
         self._num_updates = 1
         for _ in range(self._num_updates):
-            self._actor_lr_scheduler.step()
             transitions = self._buffer.sample(self._config.batch_size)
             train_info.add(self._update_network(transitions))
 
@@ -218,7 +220,7 @@ class DDPGAgent(BaseAgent):
 
             # For IL, use IL reward
             if self._predict_reward is not None:
-                rew_il = self._predict_reward(o, ac)
+                rew_il = self._predict_reward(o, o_next, ac)
                 rew = (
                     1 - self._config.gail_env_reward
                 ) * rew_il + self._config.gail_env_reward * rew
@@ -292,6 +294,7 @@ class DDPGAgent(BaseAgent):
         ):
             actor_train_info = self._update_actor(o, mask)
             info.add(actor_train_info)
+            self._actor_lr_scheduler.step()
 
         if self._update_iter % self._config.critic_target_update_freq == 0:
             for i, fc in enumerate(self._critic.fcs):

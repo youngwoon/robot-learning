@@ -26,7 +26,11 @@ def optimizer_cuda(optimizer, device):
 
 
 def get_ckpt_path(base_dir, ckpt_num):
+    base_dir = os.path.expanduser(base_dir)
     if ckpt_num is None:
+        if base_dir.endswith(".pt"):
+            max_step = base_dir.rsplit("_", 1)[-1].split(".")[0]
+            return base_dir, max_step
         return get_recent_ckpt_path(base_dir)
     files = glob(os.path.join(base_dir, "*.pt"))
     for f in files:
@@ -304,7 +308,7 @@ def unflatten(flattened, separator="."):
 # from https://github.com/MishaLaskin/rad/blob/master/utils.py
 def center_crop(img, out=84):
     """
-        args:
+    Args:
         imgs: np.array shape (C,H,W)
         out: output size (e.g. 84)
         returns np.array shape (1,C,H,W)
@@ -319,10 +323,11 @@ def center_crop(img, out=84):
     img = np.expand_dims(img, axis=0)
     return img
 
+
 # from https://github.com/MishaLaskin/rad/blob/master/utils.py
 def center_crop_images(image, out=84):
     """
-        args:
+    Args:
         imgs: np.array shape (B,C,H,W)
         out: output size (e.g. 84)
         returns np.array shape (B,C,H,W)
@@ -333,14 +338,14 @@ def center_crop_images(image, out=84):
     top = (h - new_h) // 2
     left = (w - new_w) // 2
 
-    image = image[:, :, top:top + new_h, left:left + new_w]
+    image = image[:, :, top : top + new_h, left : left + new_w]
     return image
 
 
 # from https://github.com/MishaLaskin/rad/blob/master/data_augs.py
 def random_crop(imgs, out=84):
     """
-        args:
+    Args:
         imgs: np.array shape (B,C,H,W)
         out: output size (e.g. 84)
         returns np.array
