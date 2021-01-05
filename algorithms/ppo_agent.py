@@ -17,7 +17,7 @@ from ..utils.pytorch import (
     sync_grads,
     sync_networks,
     to_tensor,
-    center_crop_images
+    center_crop_images,
 )
 from .base_agent import BaseAgent
 from .dataset import RandomSampler, ReplayBuffer
@@ -184,6 +184,9 @@ class PPOAgent(BaseAgent):
     def train(self):
         train_info = Info()
 
+        self._actor_lr_scheduler.step()
+        self._critic_lr_scheduler.step()
+
         self._copy_target_network(self._old_actor, self._actor)
 
         num_batches = (
@@ -200,14 +203,11 @@ class PPOAgent(BaseAgent):
 
         self._buffer.clear()
 
-        self._actor_lr_scheduler.step()
-        self._critic_lr_scheduler.step()
-
         logger.info(
             "Actor lr %f, Critic lr %f, PPO Clip Frac %f",
             self._actor_lr_scheduler.get_lr()[0],
             self._critic_lr_scheduler.get_lr()[0],
-            np.mean(train_info["ppo_clip_frac"])
+            np.mean(train_info["ppo_clip_frac"]),
         )
 
         # slow!
@@ -224,15 +224,14 @@ class PPOAgent(BaseAgent):
     def _update_actor(self, o, a_z, adv):
         info = Info()
 
-        _, _, log_pi, ent = self._actor.act(
-            o, activations=a_z, return_log_prob=True
-        )
+        _, _, log_pi, ent = self._actor.act(o, activations=a_z, return_log_prob=True)
         _, _, old_log_pi, _ = self._old_actor.act(
             o, activations=a_z, return_log_prob=True
         )
         if old_log_pi.min() < -100:
             logger.error("sampling an action with a probability of 1e-100")
             import ipdb
+
             ipdb.set_trace()
 
         # the actor loss
@@ -245,7 +244,9 @@ class PPOAgent(BaseAgent):
         )
         actor_loss = -torch.min(surr1, surr2).mean()
 
-        ppo_clip_frac = torch.gt(torch.abs(ratio - 1.0), self._config.ppo_clip).float().mean()
+        ppo_clip_frac = (
+            torch.gt(torch.abs(ratio - 1.0), self._config.ppo_clip).float().mean()
+        )
 
         if (
             not np.isfinite(ratio.cpu().detach()).all()
@@ -254,6 +255,7 @@ class PPOAgent(BaseAgent):
             import ipdb
 
             ipdb.set_trace()
+
         info["ppo_clip_frac"] = ppo_clip_frac.cpu().item()
         info["entropy_loss"] = entropy_loss.cpu().item()
         info["actor_loss"] = actor_loss.cpu().item()

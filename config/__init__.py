@@ -33,7 +33,10 @@ def create_parser():
 
     # environment
     parser.add_argument(
-        "--env", type=str, default="Hopper-v2", help="environment name",
+        "--env",
+        type=str,
+        default="Hopper-v2",
+        help="environment name",
     )
     parser.add_argument("--seed", type=int, default=123)
 
@@ -314,7 +317,12 @@ def add_td3_arguments(parser):
 
 def add_il_arguments(parser):
     parser.add_argument("--demo_path", type=str, default=None, help="path to demos")
-    parser.add_argument("--demo_low_level", type=str2bool, default=False, help="use low level actions for training")
+    parser.add_argument(
+        "--demo_low_level",
+        type=str2bool,
+        default=False,
+        help="use low level actions for training",
+    )
     parser.add_argument(
         "--demo_subsample_interval",
         type=int,

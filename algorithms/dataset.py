@@ -49,7 +49,9 @@ def augment_ob(batch, image_crop_size):
 
 
 class ReplayBufferPerStep(object):
-    def __init__(self, shapes: dict, buffer_size: int, image_crop_size=84, absorbing_state=False):
+    def __init__(
+        self, shapes: dict, buffer_size: int, image_crop_size=84, absorbing_state=False
+    ):
         self._capacity = buffer_size
 
         if absorbing_state:
@@ -69,7 +71,6 @@ class ReplayBufferPerStep(object):
         self._idx = 0
         self._full = False
 
-    # store the episode
     def store_episode(self, rollout):
         for k in self._keys:
             add_rollout(self._buffer[k], rollout[k], self._idx)
@@ -77,7 +78,6 @@ class ReplayBufferPerStep(object):
         self._idx = (self._idx + 1) % self._capacity
         self._full = self._full or self._idx == 0
 
-    # sample the data from the replay buffer
     def sample(self, batch_size):
         idxs = np.random.randint(
             0, self._capacity if self._full else self._idx, size=batch_size
@@ -112,9 +112,8 @@ class ReplayBuffer(object):
         self._current_size = 0
         self._buffer = defaultdict(list)
 
-    # store transitions
     def store_episode(self, rollout):
-        # @rollout can be any length of transitions
+        """ @rollout can be any length of transitions. """
         for k in self._keys:
             if self._current_size < self._capacity:
                 self._buffer[k].append(rollout[k])
@@ -125,9 +124,7 @@ class ReplayBuffer(object):
         if self._current_size < self._capacity:
             self._current_size += 1
 
-    # sample the data from the replay buffer
     def sample(self, batch_size):
-        # sample transitions
         transitions = self._sample_func(self._buffer, batch_size)
         return transitions
 
@@ -154,7 +151,6 @@ class ReplayBufferEpisode(object):
         self._new_episode = True
         self._buffer = defaultdict(list)
 
-    # store the episode
     def store_episode(self, rollout):
         if self._new_episode:
             self._new_episode = False
@@ -173,9 +169,7 @@ class ReplayBufferEpisode(object):
                 self._current_size += 1
             self._new_episode = True
 
-    # sample the data from the replay buffer
     def sample(self, batch_size):
-        # sample transitions
         transitions = self._sample_func(self._buffer, batch_size)
         return transitions
 
@@ -233,6 +227,7 @@ class RandomSampler(object):
 
         return new_transitions
 
+
 class SeqSampler(object):
     def __init__(self, seq_length, image_crop_size=84):
         self._seq_length = seq_length
@@ -260,18 +255,18 @@ class SeqSampler(object):
             for episode_idx, t in zip(episode_idxs, t_samples)
         ]
 
-        #Create a key that stores the specified future fixed length of sequences, pad last states if necessary
+        # Create a key that stores the specified future fixed length of sequences, pad last states if necessary
 
         print(episode_idxs)
         print(t_samples)
 
-        #List of dictionaries is created here..., flatten it out?
+        # List of dictionaries is created here..., flatten it out?
         transitions["following_sequences"] = [
-            episode_batch["ob"][episode_idx][t:t+ self._seq_length]
+            episode_batch["ob"][episode_idx][t : t + self._seq_length]
             for episode_idx, t in zip(episode_idxs, t_samples)
         ]
 
-        #something's wrong here... should use index episode_idx to episode_batch, not transitions
+        # something's wrong here... should use index episode_idx to episode_batch, not transitions
 
         # # Pad last states
         # for episode_idx in episode_idxs:
@@ -297,12 +292,15 @@ class SeqSampler(object):
             # curr_ep = episode_batch["ob"][episode_idx]
             # curr_ep.extend(curr_ep[-1:] * (self._seq_length - len(curr_ep)))
 
-            #all list should have 10 dictionaries now
+            # all list should have 10 dictionaries now
             if isinstance(transitions["following_sequences"][i], dict):
                 continue
-            transitions["following_sequences"][i].extend(transitions["following_sequences"][i][-1:] * (self._seq_length - len(transitions["following_sequences"][i])))
+            transitions["following_sequences"][i].extend(
+                transitions["following_sequences"][i][-1:]
+                * (self._seq_length - len(transitions["following_sequences"][i]))
+            )
 
-            #turn transitions["following_sequences"] to a dictionary
+            # turn transitions["following_sequences"] to a dictionary
             fs_list = transitions["following_sequences"][i]
             container = {}
             container["ob"] = []
@@ -310,8 +308,6 @@ class SeqSampler(object):
                 container["ob"].extend(j["ob"])
             container["ob"] = np.array(container["ob"])
             transitions["following_sequences"][i] = container
-
-
 
         new_transitions = {}
         for k, v in transitions.items():
@@ -397,4 +393,3 @@ class HERSampler(object):
                 new_transitions[k] = np.stack(v)
 
         return new_transitions
-
