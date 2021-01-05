@@ -30,10 +30,11 @@ class Discriminator(nn.Module):
 
     def forward(self, ob, ac=None):
         # flatten observation
-        ob = list(ob.values())
-        if len(ob[0].shape) == 1:
-            ob = [x.unsqueeze(0) for x in ob]
-        ob = torch.cat(ob, dim=-1)
+        if isinstance(ob, OrderedDict) or isinstance(ob, dict):
+            ob = list(ob.values())
+            if len(ob[0].shape) == 1:
+                ob = [x.unsqueeze(0) for x in ob]
+            ob = torch.cat(ob, dim=-1)
 
         if ac is not None:
             # flatten action

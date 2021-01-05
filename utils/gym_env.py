@@ -67,6 +67,7 @@ class GymWrapper(gym.Wrapper):
         camera_id=None,
         channels_first=True,
         frame_skip=1,
+        return_state=False
     ):
         super().__init__(env)
         self._from_pixels = from_pixels
@@ -76,6 +77,7 @@ class GymWrapper(gym.Wrapper):
         self._channels_first = channels_first
         self._frame_skip = frame_skip
         self.max_episode_steps = self.env._max_episode_steps // frame_skip
+        self._return_state = return_state
 
         if from_pixels:
             shape = [3, height, width] if channels_first else [height, width, 3]
@@ -85,9 +87,15 @@ class GymWrapper(gym.Wrapper):
         else:
             self.observation_space = env.observation_space
 
+        self.env_observation_space = env.observation_space
+
     def reset(self):
         ob = self.env.reset()
-        return self._get_obs(ob)
+
+        if self._return_state:
+            return self._get_obs(ob, reset=True), ob
+
+        return self._get_obs(ob, reset=True)
 
     def step(self, ac):
         reward = 0
@@ -96,10 +104,12 @@ class GymWrapper(gym.Wrapper):
             reward += _reward
             if done:
                 break
+        if self._return_state:
+            return (self._get_obs(ob), ob), reward, done, info
 
         return self._get_obs(ob), reward, done, info
 
-    def _get_obs(self, ob):
+    def _get_obs(self, ob, reset=False):
         if self._from_pixels:
             ob = self.render(
                 mode="rgb_array",
@@ -107,20 +117,31 @@ class GymWrapper(gym.Wrapper):
                 width=self._width,
                 camera_id=self._camera_id,
             )
+            if reset:
+                ob = self.render(
+                    mode="rgb_array",
+                    height=self._height,
+                    width=self._width,
+                    camera_id=self._camera_id,
+                )
             if self._channels_first:
                 ob = ob.transpose(2, 0, 1).copy()
         return ob
 
 
 class DictWrapper(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env, return_state=False):
         super().__init__(env)
+
+        self._return_state = return_state
 
         self._is_ob_dict = isinstance(env.observation_space, gym.spaces.Dict)
         if not self._is_ob_dict:
             self.observation_space = gym.spaces.Dict({"ob": env.observation_space})
+            self.env_observation_space = gym.spaces.Dict({"state": env.env_observation_space})
         else:
             self.observation_space = env.observation_space
+            self.env_observation_space = env.env_observation_space
 
         self._is_ac_dict = isinstance(env.action_space, gym.spaces.Dict)
         if not self._is_ac_dict:
@@ -140,12 +161,15 @@ class DictWrapper(gym.Wrapper):
 
     def _get_obs(self, ob):
         if not self._is_ob_dict:
-            ob = {"ob": ob}
+            if self._return_state:
+                ob = {"ob": ob[0], "state": ob[1]}
+            else:
+                ob = {"ob": ob}
         return ob
 
 
 class FrameStackWrapper(gym.Wrapper):
-    def __init__(self, env, frame_stack=3):
+    def __init__(self, env, frame_stack=3, return_state=False):
         super().__init__(env)
 
         # Both observation and action spaces must be gym.spaces.Dict.
@@ -154,6 +178,8 @@ class FrameStackWrapper(gym.Wrapper):
 
         self._frame_stack = frame_stack
         self._frames = deque([], maxlen=frame_stack)
+        self._return_state = return_state
+        self._state = None
 
         ob_space = []
         for k, space in env.observation_space.spaces.items():
@@ -161,14 +187,20 @@ class FrameStackWrapper(gym.Wrapper):
             ob_space.append((k, space_stack))
         self.observation_space = gym.spaces.Dict(ob_space)
 
+        self.env_observation_space = env.env_observation_space
+
     def reset(self):
         ob = self.env.reset()
+        if self._return_state:
+            self._state = ob.pop("state", None)
         for _ in range(self._frame_stack):
             self._frames.append(ob)
         return self._get_obs()
 
     def step(self, ac):
         ob, reward, done, info = self.env.step(ac)
+        if self._return_state:
+            self._state = ob.pop("state", None)
         self._frames.append(ob)
         return self._get_obs(), reward, done, info
 
@@ -177,6 +209,9 @@ class FrameStackWrapper(gym.Wrapper):
         obs = []
         for k in self.env.observation_space.spaces.keys():
             obs.append((k, np.concatenate([f[k] for f in frames], axis=0)))
+        if self._return_state:
+            obs.append(("state", self._state))
+
         return OrderedDict(obs)
 
 
@@ -202,4 +237,3 @@ class AbsorbingWrapper(gym.Wrapper):
 
     def get_absorbing_state(self):
         return get_absorbing_state(self.observation_space)
-

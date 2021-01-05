@@ -6,7 +6,6 @@ import numpy as np
 from ..utils.normalizer import Normalizer
 from ..utils.pytorch import to_tensor, center_crop
 
-
 class BaseAgent(object):
     """ Base class for agents. """
 
@@ -34,7 +33,7 @@ class BaseAgent(object):
         ob = ob.copy()
         for k, v in ob.items():
             if self._config.encoder_type == "cnn" and len(v.shape) == 3:
-                ob[k] = center_crop(v, self._config.encoder_image_size)
+                    ob[k] = center_crop(v, self._config.encoder_image_size)
             else:
                 ob[k] = np.expand_dims(ob[k], axis=0)
 

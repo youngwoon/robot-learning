@@ -179,6 +179,7 @@ def add_policy_arguments(parser):
         "--encoder_type", type=str, default="mlp", choices=["mlp", "cnn"]
     )
     parser.add_argument("--encoder_image_size", type=int, default=84)
+    parser.add_argument("--random_crop", type=str2bool, default=False)
     parser.add_argument("--encoder_conv_dim", type=int, default=32)
     parser.add_argument("--encoder_kernel_size", type=str2intlist, default=[3, 3, 3, 3])
     parser.add_argument("--encoder_stride", type=str2intlist, default=[2, 1, 1, 1])
@@ -189,6 +190,7 @@ def add_policy_arguments(parser):
         parser.set_defaults(screen_width=100, screen_height=100)
         parser.set_defaults(policy_mlp_dim=[1024, 1024])
         parser.set_defaults(critic_mlp_dim=[1024, 1024])
+        parser.add_argument("--asym_ac", type=str2bool, default=False)
 
     # actor-critic
     parser.add_argument(
@@ -203,6 +205,9 @@ def add_policy_arguments(parser):
         default=0.995,
         help="the average coefficient",
     )
+
+    parser.add_argument("--log_std_min", type=float, default=-10)
+    parser.add_argument("--log_std_max", type=float, default=2)
 
     # absorbing state
     parser.add_argument("--absorbing_state", type=str2bool, default=False)

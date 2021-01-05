@@ -82,11 +82,12 @@ def get_gym_env(env_id, config):
             width=config.screen_width,
             channels_first=True,
             frame_skip=config.action_repeat,
+            return_state=(config.encoder_type == "cnn" and config.asym_ac)
         )
 
-    env = DictWrapper(env)
+    env = DictWrapper(env, return_state=(config.encoder_type == "cnn" and config.asym_ac))
     if config.encoder_type == "cnn":
-        env = FrameStackWrapper(env, frame_stack=3)
+        env = FrameStackWrapper(env, frame_stack=3, return_state=(config.encoder_type == "cnn" and config.asym_ac))
     if config.absorbing_state:
         env = AbsorbingWrapper(env)
 
