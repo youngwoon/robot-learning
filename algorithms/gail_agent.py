@@ -131,6 +131,9 @@ class GAILAgent(BaseAgent):
                 count_parameters(self._discriminator),
             )
 
+    def is_off_policy(self):
+        return False
+
     def store_episode(self, rollouts):
         self._rl_agent.store_episode(rollouts)
 

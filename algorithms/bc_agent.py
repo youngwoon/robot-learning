@@ -79,6 +79,9 @@ class BCAgent(BaseAgent):
             logger.info("Creating a BC agent")
             logger.info("The actor has %d parameters", count_parameters(self._actor))
 
+    def is_off_policy(self):
+        return False
+
     def state_dict(self):
         return {
             "actor_state_dict": self._actor.state_dict(),

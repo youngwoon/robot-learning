@@ -93,6 +93,9 @@ class SACAgent(BaseAgent):
             logger.info("The actor has %d parameters", count_parameters(self._actor))
             logger.info("The critic has %d parameters", count_parameters(self._critic))
 
+    def is_off_policy(self):
+        return True
+
     def store_episode(self, rollouts):
         self._num_updates = (
             mpi_sum(len(rollouts["ac"]))

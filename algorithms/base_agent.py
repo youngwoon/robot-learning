@@ -1,10 +1,13 @@
 from collections import OrderedDict
+from glob import glob
+import os
 
 import torch
 import numpy as np
 
 from ..utils.normalizer import Normalizer
 from ..utils.pytorch import to_tensor, center_crop
+from ..utils.logger import logger
 
 
 class BaseAgent(object):
@@ -64,7 +67,7 @@ class BaseAgent(object):
         raise NotImplementedError()
 
     def is_off_policy(self):
-        return self._buffer is not None
+        raise NotImplementedError()
 
     def set_buffer(self, buffer):
         self._buffer = buffer
@@ -72,8 +75,29 @@ class BaseAgent(object):
     def replay_buffer(self):
         return self._buffer.state_dict()
 
-    def load_replay_buffer(self, state_dict):
-        self._buffer.load_state_dict(state_dict)
+    def save_replay_buffer(self, log_dir, ckpt_num):
+        replay_path = os.path.join(log_dir, "replay_%08d.pkl" % ckpt_num)
+        torch.save(self.replay_buffer(), replay_path)
+
+    def load_replay_buffer(self, log_dir, ckpt_num):
+        replay_paths = glob(os.path.join(log_dir, "replay_*.pkl"))
+        replay_paths.sort()
+        load_replay = False
+        for replay_path in replay_paths:
+            start_idx = int(replay_path.split(".")[0].split("_")[1])
+            end_idx = int(replay_path.split(".")[0].split("_")[2])
+            if not (end_idx <= ckpt_num - self._replay_buffer.size or ckpt_num < start_idx):
+                continue
+            logger.warn("Load replay_buffer %s", replay_path)
+            buffer = torch.load(replay_path)
+            self._replay_buffer.add(buffer)
+            load_replay = True
+
+        if not load_replay:
+            logger.warn("Replay buffer not exists at %s", log_dir)
+
+    # def load_replay_buffer(self, state_dict):
+    #     self._buffer.load_state_dict(state_dict)
 
     def set_reward_function(self, predict_reward):
         self._predict_reward = predict_reward

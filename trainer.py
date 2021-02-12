@@ -117,12 +117,7 @@ class Trainer(object):
         logger.warn("Save checkpoint: %s", ckpt_path)
 
         if self._agent.is_off_policy():
-            replay_path = os.path.join(
-                self._config.log_dir, "replay_%08d.pkl" % ckpt_num
-            )
-            with gzip.open(replay_path, "wb") as f:
-                replay_buffers = {"replay": self._agent.replay_buffer()}
-                pickle.dump(replay_buffers, f)
+            self._agent.save_reply_buffer(self._config.log_dir, ckpt_num)
 
     def _load_ckpt(self, ckpt_path, ckpt_num):
         """
@@ -140,16 +135,17 @@ class Trainer(object):
             self._agent.load_state_dict(ckpt["agent"])
 
             if self._config.is_train and self._agent.is_off_policy():
-                replay_path = os.path.join(
-                    self._config.log_dir, "replay_%08d.pkl" % ckpt_num
-                )
-                logger.warn("Load replay_buffer %s", replay_path)
-                if os.path.exists(replay_path):
-                    with gzip.open(replay_path, "rb") as f:
-                        replay_buffers = pickle.load(f)
-                        self._agent.load_replay_buffer(replay_buffers["replay"])
-                else:
-                    logger.warn("Replay buffer not exists at %s", replay_path)
+                self._agent.load_replay_buffer(self._config.log_dir, ckpt_num)
+                # replay_path = os.path.join(
+                #     self._config.log_dir, "replay_%08d.pkl" % ckpt_num
+                # )
+                # logger.warn("Load replay_buffer %s", replay_path)
+                # if os.path.exists(replay_path):
+                #     with gzip.open(replay_path, "rb") as f:
+                #         replay_buffers = pickle.load(f)
+                #         self._agent.load_replay_buffer(replay_buffers["replay"])
+                # else:
+                #     logger.warn("Replay buffer not exists at %s", replay_path)
 
             if (
                 self._config.init_ckpt_path is not None

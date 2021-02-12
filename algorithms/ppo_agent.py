@@ -144,6 +144,9 @@ class PPOAgent(BaseAgent):
 
         rollouts["ret"] = ret.tolist()
 
+    def is_off_policy(self):
+        return False
+
     def state_dict(self):
         return {
             "actor_state_dict": self._actor.state_dict(),

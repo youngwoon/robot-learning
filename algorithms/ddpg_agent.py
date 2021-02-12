@@ -71,6 +71,9 @@ class DDPGAgent(BaseAgent):
             logger.info("The actor has %d parameters", count_parameters(self._actor))
             logger.info("The critic has %d parameters", count_parameters(self._critic))
 
+    def is_off_policy(self):
+        return True
+
     def act(self, ob, is_train=True):
         """ Returns action and the actor's activation given an observation @ob. """
         ac, activation = super().act(ob, is_train=is_train)
