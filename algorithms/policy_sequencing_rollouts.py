@@ -42,6 +42,28 @@ class Rollout(object):
         return batch
 
 
+class StateSet(object):
+    """ Maintain a buffer for initial states or terminal states. """
+
+    def __init__(self):
+        self._buffer = []
+
+    def extend(self, states):
+        self._buffer.extend(states)
+
+    def add(self, state):
+        self._buffer.append(state)
+
+    def sample(self, ratio):
+        """
+        Samples one state from buffer with @ratio prob. Otherwise, return None.
+        """
+        if np.random.rand() < ratio:
+            return np.random.choice(self._buffer)
+        else:
+            return None
+
+
 class PolicySequencingRolloutRunner(object):
     """
     Run rollout given environment and multipel sub-policies.
@@ -60,6 +82,20 @@ class PolicySequencingRolloutRunner(object):
         self._env_eval = env_eval
         self._agent = agent
         self._exclude_rollout_log = ["episode_sucess_state"]
+
+        if config.load_init_states:
+            with open(config.load_init_states, "rb") as f:
+                self._env_init_states = StateSet()
+                self._env_init_states.extend(pickle.load(f))
+            self._init_ratio = config.env_init_from_file_ratio
+
+    def _reset_env(self, env):
+        """ Resets the environment and return the initial observation. """
+        if self._env_init_states:
+            init_qpos = self._env_init_states.sample(self._init_ratio)
+            env.set_init_qpos(init_qpos)
+
+        return env.reset()
 
     def run(
         self,
@@ -101,7 +137,8 @@ class PolicySequencingRolloutRunner(object):
             ep_rew_rl = 0
             if il:
                 ep_rew_il = 0
-            ob = env.reset()
+
+            ob = self._reset_env(env)
 
             # run rollout
             while not done:
@@ -120,6 +157,8 @@ class PolicySequencingRolloutRunner(object):
 
                 # take a step
                 ob, reward, done, info = env.step(ac)
+                if "subtask" in info:
+                    subtask = info["subtask"]
                 rollout.add({"ob_next": ob})
 
                 # replace reward
@@ -215,7 +254,7 @@ class PolicySequencingRolloutRunner(object):
         if il:
             ep_rew_il = 0
 
-        ob = env.reset()
+        ob = self._reset_env(env)
 
         self._record_frames = []
         if record_video:

@@ -73,6 +73,18 @@ def add_method_arguments(parser):
     except:
         pass
     parser.add_argument("--action_repeat", type=int, default=1)
+    parser.add_argument(
+        "--load_init_states",
+        type=str,
+        default=None,
+        help="path to pickle file of initial states",
+    )
+    parser.add_argument(
+        "--env_init_from_file_ratio",
+        type=float,
+        default=0.5,
+        help="how frequently sample from the stored initial states",
+    )
 
     # misc
     parser.add_argument("--run_prefix", type=str, default=None)
