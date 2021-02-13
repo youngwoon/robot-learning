@@ -136,11 +136,14 @@ class DictWrapper(gym.Wrapper):
         self._return_state = return_state
 
         self._is_ob_dict = isinstance(env.observation_space, gym.spaces.Dict)
+        self._env_is_ob_dict = isinstance(env.env_observation_space, gym.spaces.Dict)
         if not self._is_ob_dict:
             self.observation_space = gym.spaces.Dict({"ob": env.observation_space})
-            self.env_observation_space = gym.spaces.Dict({"state": env.env_observation_space})
         else:
             self.observation_space = env.observation_space
+        if not self._env_is_ob_dict:
+            self.env_observation_space = gym.spaces.Dict({"state": env.env_observation_space})
+        else:
             self.env_observation_space = env.env_observation_space
 
         self._is_ac_dict = isinstance(env.action_space, gym.spaces.Dict)
@@ -162,7 +165,10 @@ class DictWrapper(gym.Wrapper):
     def _get_obs(self, ob):
         if not self._is_ob_dict:
             if self._return_state:
-                ob = {"ob": ob[0], "state": ob[1]}
+                if not self._env_is_ob_dict:
+                    ob = {"ob": ob[0], "state": {"state": ob[1]}}
+                else:
+                    ob = {"ob": ob[0], "state": ob[1]}
             else:
                 ob = {"ob": ob}
         return ob
