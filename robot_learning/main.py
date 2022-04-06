@@ -120,8 +120,6 @@ class Run(object):
 
             # setup wandb
             exclude = ["device"]
-            if not config.wandb:
-                os.environ["WANDB_MODE"] = "dryrun"
 
             wandb.init(
                 resume=config.run_name,
@@ -130,6 +128,7 @@ class Run(object):
                 dir=config.log_dir,
                 entity=config.wandb_entity,
                 notes=config.notes,
+                mode="online" if config.wandb else "disabled",
             )
             wandb.save(git_path)
 
