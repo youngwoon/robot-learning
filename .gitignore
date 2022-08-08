@@ -4,8 +4,8 @@
 .python-version
 
 # Log
-log
-wandb
+/log
+/wandb
 
 # Mujoco
 MUJOCO_LOG.TXT
@@ -18,13 +18,13 @@ Session.vim
 .vscode
 
 # Data
-*.csv
-*.ini
-*.npy
-*.mp4
-*.zip
-*.hdf5
-*screenlog*
+/*.csv
+/*.ini
+/*.npy
+/*.mp4
+/*.zip
+/*.hdf5
+/*screenlog*
 
 # Python
 ## Byte-compiled / optimized / DLL files

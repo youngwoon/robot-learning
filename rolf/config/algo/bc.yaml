@@ -1,0 +1,13 @@
+defaults:
+  - il
+  - _self_
+
+name: bc
+
+gaussian_policy: false
+max_global_step: 100
+evaluate_interval: 10
+num_eval: 50
+ob_norm: false
+bc_lr: 3e-4
+val_split: 0
