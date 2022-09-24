@@ -6,13 +6,6 @@ defaults:
   - override hydra/job_logging: stdout
 
 
-env:
-  screen_size: [512, 512]
-  action_repeat: 1
-  absorbing_state: false
-  pixel_ob: false
-  state_ob: true
-
 # Training
 seed: 123
 is_train: true

@@ -56,7 +56,7 @@ class DreamerRolloutRunner(RolloutRunner):
         while True:
             done = False
             ep_len, ep_rew, ep_rew_rl = 0, 0, 0
-            ob_next = env.reset()
+            ob_next, info = env.reset()
             state_next = None
 
             # Add dummy previous action for the first transition.
@@ -73,7 +73,8 @@ class DreamerRolloutRunner(RolloutRunner):
                     ac, state_next = agent.act(ob, state, is_train=True)
 
                 # Take a step.
-                ob_next, reward, done, info = env.step(ac)
+                ob_next, reward, terminated, truncated, info = env.step(ac)
+                done = terminated or truncated
                 info.update(dict(ac=ac))
 
                 reward_rl = reward * cfg.rolf.reward_scale
@@ -133,7 +134,7 @@ class DreamerRolloutRunner(RolloutRunner):
         ep_rew = 0
         ep_rew_rl = 0
 
-        ob_next = env.reset()
+        ob_next, info = env.reset()
         state_next = None
 
         record_frames = []
@@ -149,7 +150,8 @@ class DreamerRolloutRunner(RolloutRunner):
             ac, state_next = agent.act(ob, state, is_train=False)
 
             # take a step
-            ob_next, reward, done, info = env.step(ac)
+            ob_next, reward, terminated, truncated, info = env.step(ac)
+            done = terminated or truncated
             info.update(dict(ac=ac))
 
             reward_rl = reward * cfg.rolf.reward_scale

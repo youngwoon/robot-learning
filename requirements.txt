@@ -26,9 +26,7 @@ mpi4py
 
 # environments
 gym
-mujoco-py
-git+git://github.com/deepmind/dm_control.git
-git+git://github.com/1nadequacy/dmc2gym.git
+dm_control
 
 # DL framework
 tensorflow

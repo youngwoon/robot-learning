@@ -35,9 +35,7 @@ setup(
         "moviepy",
         "mpi4py",
         "gym",
-        "mujoco-py",
         "dm_control",
-        "dmc2gym @ git+ssh://git@github.com/1nadequacy/dmc2gym.git",
         "tensorflow-macos" if "macOS" in platform() else "tensorflow",
     ],
 )

@@ -95,7 +95,7 @@ class RolloutRunner(object):
         while True:
             done = False
             ep_len, ep_rew, ep_rew_rl, ep_rew_il = 0, 0, 0, 0
-            ob_next = env.reset()
+            ob_next, info = env.reset()
             state_next = None
 
             # Rollout one episode.
@@ -109,7 +109,8 @@ class RolloutRunner(object):
                     ac, state_next = agent.act(ob, state, is_train=True)
 
                 # Take a step.
-                ob_next, reward, done, info = env.step(ac)
+                ob_next, reward, terminated, truncated, info = env.step(ac)
+                done = terminated or truncated
 
                 if il:
                     reward_il = agent.predict_reward(ob, ob_next, ac)
@@ -128,7 +129,7 @@ class RolloutRunner(object):
                     ep_rew_il += reward_il
 
                 # -1 absorbing, 0 done, 1 not done
-                done_mask = 0 if done and ep_len < env.max_episode_steps else 1
+                done_mask = truncated
 
                 rollout.add(dict(ob=ob, ob_next=ob_next, ac=ac, done=done, rew=reward))
                 rollout.add(dict(done_mask=done_mask))
@@ -187,7 +188,7 @@ class RolloutRunner(object):
 
         done = False
         ep_len, ep_rew, ep_rew_rl, ep_rew_il = 0, 0, 0, 0
-        ob_next = env.reset()
+        ob_next, info = env.reset()
         state_next = None
 
         record_frames = []
@@ -202,7 +203,8 @@ class RolloutRunner(object):
             ac, state_next = agent.act(ob, state, is_train=False)
 
             # Take a step.
-            ob_next, reward, done, info = env.step(ac)
+            ob_next, reward, terminated, truncated, info = env.step(ac)
+            done = terminated or truncated
 
             if il:
                 reward_il = agent.predict_reward(ob, ob_next, ac)

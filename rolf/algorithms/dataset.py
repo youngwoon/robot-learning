@@ -150,11 +150,11 @@ class ReplayBufferEpisode(object):
                     episode[k] = {}
                     if isinstance(self._rollout[k][0], dict):
                         for sub_key in self._rollout[k][0]:
-                            v = np.array([t[sub_key] for t in self._rollout[k]])
+                            v = np.stack([t[sub_key] for t in self._rollout[k]])
                             v = _convert(v, self._precision)
                             episode[k][sub_key] = torch.as_tensor(v)
                     else:
-                        v = np.array(self._rollout[k])
+                        v = np.stack(self._rollout[k])
                         episode[k] = torch.as_tensor(_convert(v, self._precision))
 
                 self._buffer.append(episode)
