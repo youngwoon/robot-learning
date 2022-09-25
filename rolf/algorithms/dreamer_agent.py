@@ -239,7 +239,7 @@ class DreamerAgent(BaseAgent):
                     img = openloop.detach().cpu().numpy() * 255
                     info[f"recon_{k}"] = img.transpose(0, 1, 4, 2, 3).astype(np.uint8)
 
-        if cfg.maze_visualize:
+        if getattr(cfg, "maze_visualize", False):
             with torch.no_grad():
                 init, _ = self.model.observe(embed[:1, :1], ac[:1, :1])
                 init = {k: v[:, -1] for k, v in init.items()}
