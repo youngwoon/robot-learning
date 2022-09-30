@@ -90,9 +90,7 @@ class DreamerRolloutRunner(RolloutRunner):
                 reward_info.add(info)
 
                 if every_steps(step):
-                    _rollout = rollout.get()
-                    _rollout["done"][-1] = np.array(True)
-                    yield _rollout, rollout_len, ep_info.get_dict(only_scalar=True)
+                    yield rollout.get(), rollout_len, ep_info.get_dict(only_scalar=True)
                     rollout_len = 0
 
             # compute average/sum of information

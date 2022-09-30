@@ -1,5 +1,6 @@
 # Dreamer code reference:
-# https://github.com/danijar/dreamer/blob/master/dreamer.py
+# Dreamer: https://github.com/danijar/dreamer
+# DreamerV2: https://github.com/danijar/dreamerv2
 
 import numpy as np
 import torch
@@ -9,7 +10,7 @@ from .base_agent import BaseAgent
 from .dataset import ReplayBufferEpisode, SeqSampler
 from .dreamer_rollout import DreamerRolloutRunner
 from ..networks.dreamer import DreamerModel, DenseDecoder1, ActionDecoder
-from ..utils import Logger, Once, Info, StopWatch
+from ..utils import Logger, Once, Every, Info, StopWatch
 from ..utils.pytorch import optimizer_cuda, count_parameters
 from ..utils.pytorch import to_tensor, RequiresGrad, AdamAMP
 from ..utils.dreamer import static_scan, lambda_return
@@ -24,6 +25,8 @@ class DreamerAgent(BaseAgent):
         self._use_amp = cfg.precision == 16
         self._dtype = torch.float16 if self._use_amp else torch.float32
         state_dim = cfg.deter_dim + cfg.stoch_dim
+        if cfg.stoch_discrete:
+            state_dim = cfg.deter_dim + cfg.stoch_dim * cfg.stoch_discrete
 
         # Build up networks
         self.model = DreamerModel(cfg, ob_space, ac_dim, self._dtype)
@@ -42,13 +45,14 @@ class DreamerAgent(BaseAgent):
         self.critic_optim = adam_amp(self.critic, cfg.critic_lr)
 
         # Per-episode replay buffer
-        sampler = SeqSampler(cfg.batch_length)
+        sampler = SeqSampler(cfg.batch_length, cfg.sample_last_more)
         buffer_keys = ["ob", "ac", "rew", "done"]
         self._buffer = ReplayBufferEpisode(
             buffer_keys, cfg.buffer_size, sampler.sample_func, cfg.precision
         )
 
         self._log_creation()
+        self._log_image = Every(cfg.log_every)
 
         # Freeze modules. Only updated modules will be unfrozen.
         self.requires_grad_(False)
@@ -119,6 +123,8 @@ class DreamerAgent(BaseAgent):
     def update(self):
         train_info = Info()
         log_once = Once()
+        if not self._log_image(self._step):
+            log_once()
         sw_data = StopWatch()
         sw_train = StopWatch()
         for _ in range(self._cfg.train_iter):
@@ -165,9 +171,27 @@ class DreamerAgent(BaseAgent):
                 prior_dist = self.model.get_dist(prior)
                 post_dist = self.model.get_dist(post)
 
-                # Clipping KL divergence after taking mean (from official code)
-                div = torch.distributions.kl.kl_divergence(post_dist, prior_dist).mean()
-                div_clipped = torch.clamp(div, min=cfg.free_nats)
+                if cfg.kl_balance:
+                    with torch.no_grad():
+                        prior_dist_sg = self.model.get_dist(prior)
+                        post_dist_sg = self.model.get_dist(post)
+                    div_lhs = torch.distributions.kl.kl_divergence(
+                        post_dist, prior_dist_sg
+                    )
+                    div_rhs = torch.distributions.kl.kl_divergence(
+                        post_dist_sg, prior_dist
+                    )
+                    div_lhs_clipped = torch.clamp(div_lhs.mean(), min=cfg.free_nats)
+                    div_rhs_clipped = torch.clamp(div_rhs.mean(), min=cfg.free_nats)
+                    div_clipped = (
+                        (1 - cfg.kl_balance) * div_lhs_clipped
+                        + cfg.kl_balance * div_rhs_clipped
+                    )
+                else:
+                    div = torch.distributions.kl.kl_divergence(
+                        post_dist, prior_dist
+                    ).mean()
+                    div_clipped = torch.clamp(div, min=cfg.free_nats)
                 model_loss = cfg.kl_scale * div_clipped + recon_loss + reward_loss
             model_grad_norm = self.model_optim.step(model_loss)
 
@@ -192,7 +216,9 @@ class DreamerAgent(BaseAgent):
                     discount = torch.cumprod(
                         torch.cat([torch.ones_like(pcont[:1]), pcont[:-2]], 0), 0
                     )
+                actor_entropy = self.actor(imagine_feat).entropy().mean()
                 actor_loss = -(discount * imagine_return).mean()
+                actor_loss += -cfg.ent_coef * actor_entropy
             actor_grad_norm = self.actor_optim.step(actor_loss)
 
         # Compute critic loss
@@ -218,11 +244,10 @@ class DreamerAgent(BaseAgent):
         info["model_grad_norm"] = model_grad_norm.item()
         info["actor_grad_norm"] = actor_grad_norm.item()
         info["critic_grad_norm"] = critic_grad_norm.item()
+        info["actor_entropy"] = actor_entropy.item()
 
         if log_image:
             with torch.no_grad(), torch.autocast(cfg.device, enabled=self._use_amp):
-                info["actor_entropy"] = self.actor(feat).entropy().mean().item()
-
                 # 5 timesteps for each of 4 samples
                 init, _ = self.model.observe(embed[:4, :5], ac[:4, :5])
                 init = {k: v[:, -1] for k, v in init.items()}

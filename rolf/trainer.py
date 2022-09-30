@@ -63,6 +63,7 @@ class Trainer(object):
         # Load checkpoint.
         ckpt_info = self._load_ckpt(cfg.init_ckpt_path, cfg.ckpt_num)
         step = ckpt_info.get("step", 0)
+        self._agent.set_step(step)
 
         # Sync the networks across the cpus.
         self._agent.sync_networks()
@@ -89,6 +90,7 @@ class Trainer(object):
             self._agent.store_episode(rollout)
             rollout_steps = mpi_sum(rollout_steps)
             step += rollout_steps
+            self._agent.set_step(step)
             if step < cfg.rolf.max_ob_norm_step:
                 self._update_normalizer(rollout)
             if self._is_chef:

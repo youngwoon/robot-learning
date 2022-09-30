@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import gym.spaces
 
 from .utils import MLP, get_activation
-from .distributions import Normal, TanhNormal, MixedDistribution
+from .distributions import Normal, TanhNormal, MixedDistribution, OneHot
 
 from ..utils.dreamer import static_scan
 
@@ -23,6 +23,7 @@ class DreamerModel(nn.Module):
             embed_dim,
             ac_dim,
             cfg.stoch_dim,
+            cfg.stoch_discrete,
             cfg.deter_dim,
             cfg.deter_dim,
             cfg.dense_act,
@@ -30,7 +31,10 @@ class DreamerModel(nn.Module):
             cfg.device,
         )
 
-        state_dim = cfg.deter_dim + cfg.stoch_dim
+        if cfg.stoch_discrete:
+            state_dim = cfg.deter_dim + cfg.stoch_dim * cfg.stoch_discrete
+        else:
+            state_dim = cfg.deter_dim + cfg.stoch_dim
         self.decoder = Decoder(cfg.decoder, state_dim, ob_space)
         self.reward = DenseDecoder1(state_dim, 1, [cfg.num_units] * 2, cfg.dense_act)
 
@@ -253,6 +257,7 @@ class RSSM(nn.Module):
         embed_dim,
         ac_dim,
         stoch_dim,
+        stoch_discrete,
         deter_dim,
         hidden_dim,
         activation,
@@ -265,6 +270,7 @@ class RSSM(nn.Module):
             embed_dim: size of observation embedding.
             ac_dim: size of action, |a|.
             stoch_dim: size of stochastic latent state, |s|.
+            stoch_discrete: size of discrete stochastic latent state.
             deter_dim: size of deterministic latent state, |h|.
             hidden_dim: size of MLP hidden layers
             dtype: data type for initial states
@@ -272,28 +278,45 @@ class RSSM(nn.Module):
         """
         super().__init__()
         self._stoch_dim = stoch_dim
+        self._stoch_discrete = stoch_discrete
         self._deter_dim = deter_dim
         self._activation = get_activation(activation)
         self._dtype = dtype
         self._device = device
 
+        if stoch_discrete:
+            stoch_dim *= stoch_discrete
+
         self.cell = nn.GRUCell(hidden_dim, deter_dim)
         self.deter_fc = MLP(stoch_dim + ac_dim, hidden_dim, [], activation)
-        self.obs_fc = MLP(
-            deter_dim + embed_dim, 2 * stoch_dim, [hidden_dim], activation
-        )
-        self.imagine_fc = MLP(deter_dim, 2 * stoch_dim, [hidden_dim], activation)
+        if stoch_discrete:
+            self.obs_fc = MLP(
+                deter_dim + embed_dim, stoch_dim, [hidden_dim], activation
+            )
+            self.imagine_fc = MLP(deter_dim, stoch_dim, [hidden_dim], activation)
+        else:
+            self.obs_fc = MLP(
+                deter_dim + embed_dim, 2 * stoch_dim, [hidden_dim], activation
+            )
+            self.imagine_fc = MLP(deter_dim, 2 * stoch_dim, [hidden_dim], activation)
 
     def initial(self, batch_size):
         zeros = lambda s: torch.zeros(
-            [batch_size, s], dtype=self._dtype, device=self._device
+            [batch_size] + s, dtype=self._dtype, device=self._device
         )
-        return dict(
-            mean=zeros(self._stoch_dim),
-            std=zeros(self._stoch_dim),
-            stoch=zeros(self._stoch_dim),
-            deter=zeros(self._deter_dim),
-        )
+        if self._stoch_discrete:
+            return dict(
+                logit=zeros([self._stoch_dim, self._stoch_discrete]),
+                stoch=zeros([self._stoch_dim, self._stoch_discrete]),
+                deter=zeros([self._deter_dim]),
+            )
+        else:
+            return dict(
+                mean=zeros([self._stoch_dim]),
+                std=zeros([self._stoch_dim]),
+                stoch=zeros([self._stoch_dim]),
+                deter=zeros([self._deter_dim]),
+            )
 
     def observe(self, embed, action, state=None):
         """Computes state posterior and prior on training batch.
@@ -332,16 +355,28 @@ class RSSM(nn.Module):
         return prior
 
     def get_feat(self, state):
-        return torch.cat([state["stoch"], state["deter"]], -1)
+        stoch = state["stoch"]
+        if self._stoch_discrete:
+            stoch = stoch.flatten(-2)
+        return torch.cat([stoch, state["deter"]], -1)
 
     def get_dist(self, state):
-        return Normal(state["mean"], state["std"], event_dim=1)
+        if self._stoch_discrete:
+            return OneHot(state["logit"], event_dim=1)
+        else:
+            return Normal(state["mean"], state["std"], event_dim=1)
 
     def get_state(self, x, deter):
-        mean, std = x.chunk(2, dim=-1)
-        std = F.softplus(std) + 0.1
-        stoch = self.get_dist({"mean": mean, "std": std}).rsample()
-        return {"mean": mean, "std": std, "stoch": stoch, "deter": deter}
+        if self._stoch_discrete:
+            shape = list(x.shape[:-1])
+            logit = x.reshape(shape + [self._stoch_dim, self._stoch_discrete])
+            stoch = self.get_dist({"logit": logit}).rsample()
+            return {"logit": logit, "stoch": stoch, "deter": deter}
+        else:
+            mean, std = x.chunk(2, dim=-1)
+            std = F.softplus(std) + 0.1
+            stoch = self.get_dist({"mean": mean, "std": std}).rsample()
+            return {"mean": mean, "std": std, "stoch": stoch, "deter": deter}
 
     def deter_step(self, prev_state, prev_action):
         """Deterministic state model, h=f(h',s',a').
@@ -350,7 +385,10 @@ class RSSM(nn.Module):
             prev_state: previous deterministic state, h', and stochastic state, s'
             prev_action: previous action, a'
         """
-        x = torch.cat([prev_state["stoch"], prev_action], -1)
+        prev_stoch = prev_state["stoch"]
+        if self._stoch_discrete:
+            prev_stoch = prev_stoch.flatten(-2)
+        x = torch.cat([prev_stoch, prev_action], -1)
         x = self.deter_fc(x)
         x = self._activation(x)
         deter = self.cell(x, prev_state["deter"])

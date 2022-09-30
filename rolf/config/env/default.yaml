@@ -2,7 +2,7 @@ id: Hopper-v2
 terminate_when_unhealthy: False
 
 env_cfg:
-  screen_size: [512, 512]
+  screen_size: [256, 256]
   action_repeat: 1
   absorbing_state: false
   pixel_ob: false

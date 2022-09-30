@@ -51,6 +51,20 @@ class Categorical(torch.distributions.Categorical):
         return self.probs.argmax(dim=-1, keepdim=True)
 
 
+# One-Hot Categorical
+class OneHot(torch.distributions.Independent):
+    def __init__(self, logits, event_dim=0):
+        super().__init__(
+            torch.distributions.OneHotCategorical(logits=logits), event_dim
+        )
+
+    def rsample(self):
+        sample = self.sample()
+        probs = self.base_dist.probs
+        sample += probs - probs.detach()
+        return sample
+
+
 # Normal
 class Normal(torch.distributions.Independent):
     def __init__(self, mean, std, event_dim=0):
