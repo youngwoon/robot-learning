@@ -266,7 +266,12 @@ class SeqSampler(object):
                 if episode_len >= self._seq_len:
                     break
 
-            t = np.random.randint(episode_len - self._seq_len + 1)
+            if self._sample_last_more:
+                t = np.random.randint(episode_len)
+                t = np.clip(t, 0, episode_len - self._seq_len)
+            else:
+                t = np.random.randint(episode_len - self._seq_len + 1)
+
             for j, v in enumerate(tf.nest.flatten(episode)):
                 batch[j][i] = v[t : t + self._seq_len]
 

@@ -48,7 +48,7 @@ class DreamerAgent(BaseAgent):
         sampler = SeqSampler(cfg.batch_length, cfg.sample_last_more)
         buffer_keys = ["ob", "ac", "rew", "done"]
         self._buffer = ReplayBufferEpisode(
-            buffer_keys, cfg.buffer_size, sampler.sample_func, cfg.precision
+            buffer_keys, cfg.buffer_size, sampler.sample_func_tensor, cfg.precision
         )
 
         self._log_creation()
@@ -149,9 +149,12 @@ class DreamerAgent(BaseAgent):
         info = Info()
         cfg = self._cfg
 
-        o = to_tensor(batch["ob"], self._device, self._dtype)
-        ac = to_tensor(batch["ac"], self._device, self._dtype)
-        rew = to_tensor(batch["rew"], self._device, self._dtype)
+        # o = to_tensor(batch["ob"], self._device, self._dtype)
+        # ac = to_tensor(batch["ac"], self._device, self._dtype)
+        # rew = to_tensor(batch["rew"], self._device, self._dtype)
+        o = batch["ob"]
+        ac = batch["ac"]
+        rew = batch["rew"]
         o = self.preprocess(o)
 
         # Compute model loss
