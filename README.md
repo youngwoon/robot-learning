@@ -30,23 +30,18 @@
 ## Prerequisites
 * Ubuntu 18.04 or above
 * Python 3.9
-* MuJoCo 2.1.0 and MuJoCo 2.1.1
+* MuJoCo 2.1.0
 
 
 ## Installation
 
-1. Install MuJoCo 2.1.0 and MuJoCo 2.1.1, and add the following environment variables into `~/.bashrc` or `~/.zshrc`
+1. Install MuJoCo 2.1.0, and add the following environment variables into `~/.bashrc` or `~/.zshrc`
 ```bash
 # download MuJoCo 2.1.0 for mujoco-py
 $ mkdir ~/.mujoco
 $ wget https://github.com/deepmind/mujoco/releases/download/2.1.0/mujoco210-linux-x86_64.tar.gz -O mujoco210_linux.tar.gz
 $ tar -xvzf mujoco210_linux.tar.gz -C ~/.mujoco/
 $ rm mujoco210_linux.tar.gz
-
-# download MuJoCo 2.1.1 for dm_control
-$ wget https://github.com/deepmind/mujoco/releases/download/2.1.1/mujoco-2.1.1-linux-x86_64.tar.gz -O mujoco211_linux.tar.gz
-$ tar -xvzf mujoco211_linux.tar.gz -C ~/.mujoco/
-$ rm mujoco211_linux.tar.gz
 
 # add MuJoCo 2.1.0 to LD_LIBRARY_PATH
 $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
@@ -143,6 +138,15 @@ $ python -m rolf.main run_prefix=test algo@rolf=gail env.id=Hopper-v2 demo_path=
 Implement your own `run.py` for experiment setup, `your_config.yaml` for configuration, `your_trainer.py` for training/evaluation loop, `your_agent.py` for algorithm, `your_rollout.py` for rollout, and `your_network.py` for models.
 
 Please refer to [`skimo`](https://github.com/clvrai/skimo) repository for an example. It implements [`run.py`](https://github.com/clvrai/skimo/blob/main/run.py) for experiment setup, [`config/skimo_maze.yaml`](https://github.com/clvrai/skimo/blob/main/config/skimo_maze.yaml) for configuration, [`skill_trainer.py`](https://github.com/clvrai/skimo/blob/main/skill_trainer.py) for training/evaluation loop, [`skimo_agent.py`](https://github.com/clvrai/skimo/blob/main/skimo_agent.py) for algorithm, and [`skimo_rollout.py`](https://github.com/clvrai/skimo/blob/main/skimo_rollout.py) for rollout.
+
+
+## Troubleshooting
+
+### pip install in conda
+* Issue with mpi4py
+```bash
+conda install -c conda-forge openmpi=4.1.4=ha1ae619_100 mpi4py
+```
 
 
 ## Papers using this code
