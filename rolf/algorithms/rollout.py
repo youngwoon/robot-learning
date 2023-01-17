@@ -195,6 +195,7 @@ class RolloutRunner(object):
             # Take a step.
             ob_next, reward, terminated, truncated, info = env.step(ac)
             done = terminated or truncated
+            info.update(dict(ac=ac))
 
             if il:
                 reward_il = agent.predict_reward(ob, ob_next, ac)
@@ -242,8 +243,10 @@ class RolloutRunner(object):
     def _render_frame(self, ep_len, ep_rew, info={}):
         """Renders a video frame and adds caption."""
         frame = self._env_eval.render("rgb_array")
+        if isinstance(frame, list):
+            frame = np.concatenate(frame, axis=1)
         if len(frame.shape) == 4:
-            frame = frame[0]
+            frame = frame.swapaxes(0, 1).reshape(frame.shape[1], -1, 3)
         if np.max(frame) <= 1.0:
             frame *= 255.0
         frame = frame.astype(np.uint8)
@@ -252,7 +255,9 @@ class RolloutRunner(object):
         if self._cfg.record_video_caption:
             # Set the minimum size of frames to (512, 512) for caption readibility.
             if frame.shape[0] < 512:
-                frame = cv2.resize(frame, (512, 512))
+                frame = cv2.resize(
+                    frame, (int(512 * frame.shape[1] / frame.shape[0]), 512)
+                )
             h, w = frame.shape[:2]
 
             # Add caption.

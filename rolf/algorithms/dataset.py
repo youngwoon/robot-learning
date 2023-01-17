@@ -63,6 +63,8 @@ class ReplayBuffer(object):
     def state_dict(self):
         """Returns new transitions in replay buffer."""
         assert self._idx - self._last_saved_idx - 1 <= self._capacity
+        if self._idx - 1 == self._last_saved_idx:
+            return {}
         state_dict = {}
         s = (self._last_saved_idx + 1) % self._capacity
         e = (self._idx - 1) % self._capacity

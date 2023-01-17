@@ -154,7 +154,7 @@ class Run(object):
         return Trainer(self._cfg)
 
 
-@hydra.main(config_path="config", config_name="default_config")
+@hydra.main(version_base=None, config_path="config", config_name="default_config")
 def main(cfg: DictConfig) -> None:
     # make config writable
     OmegaConf.set_struct(cfg, False)
