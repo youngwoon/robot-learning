@@ -145,14 +145,7 @@ class DDPGAgent(BaseAgent):
         if self._cfg.critic_ensemble > 1:
             q_pred = q_pred[0]
 
-        if self._cfg.absorbing_state:
-            # do not update the actor for absorbing states
-            a_mask = 1.0 - torch.clamp(-mask, min=0)  # 0 absorbing, 1 done/not done
-            actor_loss = -(q_pred * a_mask).sum()
-            if a_mask.sum() > 1e-8:
-                actor_loss /= a_mask.sum()
-        else:
-            actor_loss = -q_pred.mean()
+        actor_loss = -q_pred.mean()
         info["actor_loss"] = actor_loss.cpu().item()
 
         # update the actor
@@ -182,13 +175,7 @@ class DDPGAgent(BaseAgent):
                     ).clamp(-self._cfg.policy_noise_clip, self._cfg.policy_noise_clip)
                     actions_next[k] = (actions_next[k] + noise).clamp(-1, 1)
 
-                if self._cfg.absorbing_state:
-                    a_mask = torch.clamp(mask, min=0)  # 0 absorbing/done, 1 not done
-                    masked_actions_next = scale_dict_tensor(actions_next, a_mask)
-                    q_next_values = self._critic_target(o_next, masked_actions_next)
-                else:
-                    q_next_values = self._critic_target(o_next, actions_next)
-
+                q_next_values = self._critic_target(o_next, actions_next)
                 q_next_value = torch.min(*q_next_values)
 
             else:
@@ -201,10 +188,7 @@ class DDPGAgent(BaseAgent):
                     1 - self._cfg.gail_env_reward
                 ) * rew_il + self._cfg.gail_env_reward * rew
 
-            if self._cfg.absorbing_state:
-                target_q_value = rew + self._cfg.rl_discount * q_next_value
-            else:
-                target_q_value = rew + mask * self._cfg.rl_discount * q_next_value
+            target_q_value = rew + mask * self._cfg.rl_discount * q_next_value
 
         # the q loss
         if self._cfg.critic_ensemble == 1:

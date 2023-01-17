@@ -10,7 +10,6 @@ from .tdmpc_agent import TDMPCAgent
 # IL algorithms
 from .bc_agent import BCAgent
 from .gail_agent import GAILAgent
-from .dac_agent import DACAgent
 
 
 RL_ALGOS = {
@@ -26,5 +25,4 @@ RL_ALGOS = {
 IL_ALGOS = {
     "bc": BCAgent,
     "gail": GAILAgent,
-    "dac": DACAgent,
 }

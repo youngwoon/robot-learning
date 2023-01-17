@@ -1,109 +1,83 @@
 """
 Converting dm_control to gym is from https://github.com/denisyarats/dmc2gym
+* Observation space has to be gym.spaces.Box or gym.spaces.Dict of multiple gym.spaces.Box
 """
 
 import os
+import copy
 from collections import deque, OrderedDict
 
 import gym
 import numpy as np
 
 from . import Logger
-from .subproc_vec_env import SubprocVecEnv
+from .subproc_vec_env import SubprocEnv, SubprocVecEnv
 
 
-def make_env(id, cfg=None, seed=0, name=None):
+def make_env(id, cfg=None, seed=0, wrapper=True):
     """Creates a new environment instance with `id` and `cfg`."""
-    # create a maze environment
+    # Create a maze environment
     if id == "maze":
-        from envs.maze import ACRandMaze0S40Env  # TODO: Use gym interface.
+        from envs.maze import ACRandMaze0S40Env
 
         env = ACRandMaze0S40Env(cfg)
 
-        # no need to wrap for spirl
-        if name == "spirl":
-            return env
-        env = GymWrapper(
-            env=env,
-            from_pixels=cfg.pixel_ob,
-            from_state=cfg.state_ob,
-            height=cfg.screen_size[0],
-            width=cfg.screen_size[1],
-            channels_first=False,
-            frame_skip=cfg.action_repeat,
-            return_state=False,  # TODO: Do we need this?
-            seed=seed,
-        )
-        return wrap_env(env, cfg)
-
-    # create a kitchen environment
+    # Create a kitchen environment
     elif id == "kitchen":
-        from envs.kitchen import (
-            NoGoalKitchenEnv,
-            KitchenEnv,
-        )  # TODO: Use gym interface.
+        from envs.kitchen import NoGoalKitchenEnv, KitchenEnv
 
-        # skill prior checkpoint has state dim as 60
-        env_class = (
-            NoGoalKitchenEnv
-            if name not in ["spirl", "spirl_dreamer", "spirl_tdmpc"]
-            else KitchenEnv
-        )
+        env_class = NoGoalKitchenEnv
+        # Skill prior checkpoint has state dim as 60
+        if name in ["spirl", "spirl_dreamer", "spirl_tdmpc"]:
+            env_class = KitchenEnv
         env = env_class(cfg)
-        # no need to wrap for spirl
-        if name == "spirl":
-            return env
-        env = GymWrapper(
-            env=env,
-            from_pixels=cfg.pixel_ob,
-            from_state=cfg.state_ob,
-            height=cfg.screen_size[0],
-            width=cfg.screen_size[1],
-            channels_first=False,
-            frame_skip=cfg.action_repeat,
-            return_state=False,
-            seed=seed,
-        )
-        return wrap_env(env, cfg)
 
-    # create a calvin environment
+    # Create a calvin environment
     elif id == "calvin":
         from envs.calvin import CalvinEnv
 
         env = CalvinEnv(**cfg)
-        # no need to wrap for spirl
-        if name == "spirl":
-            return env
-        env = GymWrapper(
-            env=env,
-            from_pixels=cfg.pixel_ob,
-            from_state=cfg.state_ob,
-            height=cfg.screen_size[0],
-            width=cfg.screen_size[1],
-            channels_first=False,
-            frame_skip=cfg.action_repeat,
-            return_state=False,
-            seed=seed,
-        )
-        return wrap_env(env, cfg)
 
-    # get default config if not provided
-    if cfg is None:
-        cfg = {
-            "id": id,
-            "env_cfg": {
-                "action_repeat": 1,
-                "screen_size": [512, 512],
-                "pixel_ob": False,
-                "state_ob": True,
-                "absorbing_state": False,
-            },
-        }
-    return get_gym_env(id, cfg, seed)
+    # Create any environment registered in Gym.
+    else:
+        # Get a default config if not provided
+        cfg = cfg or {}
+        env = get_gym_env(id, cfg, seed)
+
+    if not wrapper:
+        return env
+
+    env_cfg = cfg.get("env_cfg", {})
+    # Action repeat.
+    env = ActionRepeatWrapper(env, env_cfg.get("action_repeat", 1))
+    # Dictionary observation and action.
+    env = DictWrapper(env)
+    # Normalize state to [-1, 1].
+    if env_cfg.get("normalize_state", False):
+        env = StateNormWrapper(env)
+    # Normalize action to [-1, 1].
+    env = ActionNormWrapper(env)
+    # Pixel observation and random seed.
+    env = PixelWrapper(
+        env,
+        pixel_ob=env_cfg.get("pixel_ob", False),
+        pixel_only=env_cfg.get("pixel_only", False),
+        pixel_keys=env_cfg.get("pixel_keys", {"image": [64, 64, 3]}),
+        render_kwargs=env_cfg.get("render_kwargs", None),
+        seed=seed,
+    )
+    # Stack frames.
+    # FIXME: something weird with state stacking
+    pixel_ob = env_cfg.get("pixel_ob", False)
+    frame_stack = env_cfg.get("frame_stack", 1)
+    if pixel_ob and frame_stack > 1:
+        env = FrameStackWrapper(env, frame_stack=frame_stack)
+
+    return env
 
 
 def get_gym_env(env_id, cfg, seed):
-    """Creates gym environment and wraps with `DictWrapper` and `ActionNormWrapper`."""
+    """Creates gym environment."""
     env_cfg = cfg["env_cfg"]
     env_kwargs = cfg.copy()
     del env_kwargs["env_cfg"]
@@ -124,28 +98,14 @@ def get_gym_env(env_id, cfg, seed):
             width=env_cfg.screen_size[1],
             camera_id=camera_id,
         )
+    elif "IKEA" in env_id or "furniture" in env_id:
+        env = gym.make(env_id, **env_kwargs)
+    elif env_cfg.subprocess:
+        env = SubprocEnv(lambda: gym.make(env_id, **env_kwargs))
     else:
-        try:
-            env = gym.make(env_id, **env_kwargs)
-        except Exception as e:
-            Logger.warning("Failed to launch an environment with config.")
-            Logger.warning(e)
-            Logger.warning("Launch an environment without config.")
-            env = gym.make(env_id)
+        env = gym.make(env_id, **env_kwargs)
 
-    env = GymWrapper(
-        env=env,
-        from_pixels=env_cfg.pixel_ob,
-        from_state=env_cfg.state_ob,
-        height=env_cfg.screen_size[0],
-        width=env_cfg.screen_size[1],
-        channels_first=False,
-        frame_skip=env_cfg.action_repeat,
-        return_state=False,  # TODO: Do we need this?
-        seed=seed,
-    )
-
-    return wrap_env(env, env_cfg)
+    return env
 
 
 class DMCGymEnv(gym.Env):
@@ -187,45 +147,40 @@ class DMCGymEnv(gym.Env):
 
         for k, v in spec.items():
             if type(v) == specs.Array:
-                spaces[k] = gym.spaces.Box(-np.inf, np.inf, v.shape, type_map(v.dtype))
+                if len(v.shape) == 0:
+                    spaces[k] = gym.spaces.Box(-np.inf, np.inf, (1,), type_map(v.dtype))
+                else:
+                    spaces[k] = gym.spaces.Box(
+                        -np.inf, np.inf, v.shape, type_map(v.dtype)
+                    )
             elif type(v) == specs.BoundedArray:
                 spaces[k] = gym.spaces.Box(
                     -v.minimum, v.maximum, v.shape, type_map(v.dtype)
                 )
         return gym.spaces.Dict(spaces)
 
+    def _wrap_observation(self, ob):
+        for k in ob:
+            if len(ob[k].shape) == 0:
+                ob[k] = np.array([ob[k]])
+        return ob
+
     def reset(self, seed=None):
         timestep = self._env.reset()
-        return timestep.observation, {}
+        return self._wrap_observation(timestep.observation), {}
 
     def step(self, action):
         timestep = self._env.step(action)
-        ob = timestep.observation
+        ob = self._wrap_observation(timestep.observation)
         reward = timestep.reward or 0.0
-        truncated = timestep.discount == 0
-        terminated = timestep.last() and not truncated
+        terminated = timestep.last()
+        truncated = timestep.discount == 0 and not terminated
         return ob, reward, terminated, truncated, {}
 
-    def render(self):
+    def render(self, *args, **kwargs):
         return self._env.physics.render(
             height=self.height, width=self.width, camera_id=self.camera_id
         )
-
-
-def wrap_env(env, cfg):
-    env = DictWrapper(env, return_state=False)  # TODO: Do we need this?
-    env = ActionNormWrapper(env)
-
-    if cfg.pixel_ob and cfg.frame_stack > 1:
-        env = FrameStackWrapper(
-            env,
-            frame_stack=3,
-            return_state=cfg.pixel_ob and cfg.state_ob,
-        )
-    if cfg.absorbing_state:
-        env = AbsorbingWrapper(env)
-
-    return env
 
 
 def make_vec_env(env_id, num_env, cfg=None, seed=0):
@@ -299,136 +254,96 @@ def space_to_shape(space):
         return [space.n]
 
 
-def zero_value(space, dtype=np.float64):
-    if isinstance(space, gym.spaces.Dict):
-        return OrderedDict(
-            [(k, zero_value(space, dtype)) for k, space in space.spaces.items()]
-        )
-    elif isinstance(space, gym.spaces.Box):
-        return np.zeros(space.shape).astype(dtype)
-    elif isinstance(space, gym.spaces.Discrete):
-        return np.zeros(1).astype(dtype)
-
-
-def get_non_absorbing_state(ob):
-    ob = ob.copy()
-    ob["absorbing_state"] = np.array([0])
-    return ob
-
-
-def get_absorbing_state(space):
-    ob = zero_value(space)
-    ob["absorbing_state"] = np.array([1])
-    return ob
-
-
-class GymWrapper(gym.Wrapper):
+class PixelWrapper(gym.Wrapper):
     def __init__(
         self,
         env,
-        from_pixels=False,
-        from_state=True,
-        height=100,
-        width=100,
-        camera_id=None,
-        channels_first=True,
-        frame_skip=1,
-        return_state=False,
+        pixel_ob=False,
+        pixel_only=False,
+        pixel_keys=None,
+        render_kwargs=None,
         seed=None,
     ):
         super().__init__(env)
-        self._from_pixels = from_pixels
-        self._from_state = from_state
-        self._height = height
-        self._width = width
-        self._camera_id = camera_id
-        self._channels_first = channels_first
-        self._frame_skip = frame_skip
-        self._return_state = return_state
+        self._pixel_ob = pixel_ob
+        self._pixel_only = pixel_only
+        self._pixel_keys = pixel_keys
+        self._render_kwargs = render_kwargs
         self._seed = seed
 
-        if from_pixels:
-            shape = [3, height, width] if channels_first else [height, width, 3]
-            self.observation_space = gym.spaces.Box(
-                low=0, high=255, shape=shape, dtype=np.uint8
-            )
+        wrapped_ob_space = env.observation_space
+        if pixel_ob and pixel_only:
+            self.observation_space = gym.spaces.Dict()
         else:
-            self.observation_space = env.observation_space
+            self.observation_space = copy.deepcopy(wrapped_ob_space)
 
-        if from_pixels and from_state:
-            self.observation_space = gym.spaces.Dict(
-                OrderedDict(
-                    [
-                        ("image", self.observation_space),
-                        ("state", env.observation_space),
-                    ]
+        if pixel_ob:
+            for key, shape in pixel_keys.items():
+                pixel_ob_space = gym.spaces.Box(
+                    low=0, high=255, shape=shape, dtype=np.uint8
                 )
-            )
+                self.observation_space.spaces[key] = pixel_ob_space
 
     def reset(self, seed=None):
-        ob, info = self.env.reset(seed=self._seed)
+        ob, info = self.env.reset(seed=seed if seed is not None else self._seed)
         self._seed = None  # Initialize seed only once.
-
-        if self._return_state:
-            return self._get_obs(ob, reset=True), ob, info
 
         return self._get_obs(ob, reset=True), info
 
     def step(self, ac):
+        ob, reward, terminated, truncated, info = self.env.step(ac)
+        return self._get_obs(ob), reward, terminated, truncated, info
+
+    def _get_obs(self, ob, reset=False):
+        if not self._pixel_ob:
+            return ob
+
+        ob = {} if self._pixel_only else ob.copy()
+
+        if self._render_kwargs is None:
+            pixels = self.render()
+            if reset:
+                pixels = self.render()
+            if not isinstance(pixels, list):
+                pixels = [pixels]
+        else:
+            pixels = []
+            for render_kwargs in self._render_kwargs:
+                pixel = self.render(**render_kwargs)
+                if reset:
+                    pixel = self.render(**render_kwargs)
+                if not isinstance(pixel, list):
+                    pixel = [pixel]
+                pixels += pixel
+
+        pixel_ob = {key: pixel for key, pixel in zip(self._pixel_keys.keys(), pixels)}
+        ob.update(pixel_ob)
+        return ob
+
+    def render(self, mode="rgb_array", **kwargs):
+        return self.env.render(mode, **kwargs)
+
+
+class ActionRepeatWrapper(gym.Wrapper):
+    def __init__(self, env, action_repeat=1):
+        super().__init__(env)
+        self._action_repeat = action_repeat
+
+    def step(self, ac):
         reward = 0
-        for _ in range(self._frame_skip):
+        for _ in range(self._action_repeat):
             ob, _reward, terminated, truncated, info = self.env.step(ac)
             done = terminated or truncated
             reward += _reward
             if done:
                 break
-        if self._return_state:
-            return (self._get_obs(ob), ob), reward, terminated, truncated, info
-
-        return self._get_obs(ob), reward, terminated, truncated, info
-
-    def _get_obs(self, ob, reset=False):
-        state = ob
-        if self._from_pixels:
-            ob = self.render(
-                mode="rgb_array",
-                height=self._height,
-                width=self._width,
-                camera_id=self._camera_id,
-            )
-            if reset:
-                ob = self.render(
-                    mode="rgb_array",
-                    height=self._height,
-                    width=self._width,
-                    camera_id=self._camera_id,
-                )
-            if self._channels_first:
-                ob = ob.transpose(2, 0, 1).copy()
-        else:
-            return state
-
-        if self._from_pixels and self._from_state:
-            return OrderedDict([("image", ob), ("state", state)])
-        return ob
-
-    def render(self, mode=None, height=None, width=None, camera_id=None):
-        if mode is not None:
-            self.unwrapped.render_mode = mode
-        if height is not None:
-            self.unwrapped.height = height
-        if width is not None:
-            self.unwrapped.width = width
-        if camera_id is not None:
-            self.unwrapped.camera_id = camera_id
-        return self.env.render()
+        return ob, reward, terminated, truncated, info
 
 
 class DictWrapper(gym.Wrapper):
-    def __init__(self, env, return_state=False):
+    """Make observation space and action space gym.spaces.Dict."""
+    def __init__(self, env):
         super().__init__(env)
-
-        self._return_state = return_state
 
         self._is_ob_dict = isinstance(env.observation_space, gym.spaces.Dict)
         if not self._is_ob_dict:
@@ -455,15 +370,12 @@ class DictWrapper(gym.Wrapper):
 
     def _get_obs(self, ob):
         if not self._is_ob_dict:
-            if self._return_state:
-                ob = {self.key: ob[0], "state": ob[1]}
-            else:
-                ob = {self.key: ob}
+            ob = {self.key: ob}
         return ob
 
 
 class FrameStackWrapper(gym.Wrapper):
-    def __init__(self, env, frame_stack=3, return_state=False):
+    def __init__(self, env, frame_stack=3):
         super().__init__(env)
 
         # Both observation and action spaces must be gym.spaces.Dict.
@@ -472,8 +384,6 @@ class FrameStackWrapper(gym.Wrapper):
 
         self._frame_stack = frame_stack
         self._frames = deque([], maxlen=frame_stack)
-        self._return_state = return_state
-        self._state = None
 
         ob_space = []
         for k, space in env.observation_space.spaces.items():
@@ -483,16 +393,12 @@ class FrameStackWrapper(gym.Wrapper):
 
     def reset(self, seed=None):
         ob, info = self.env.reset(seed=seed)
-        if self._return_state:
-            self._state = ob.pop("state", None)
         for _ in range(self._frame_stack):
             self._frames.append(ob)
         return self._get_obs(), info
 
     def step(self, ac):
         ob, reward, terminated, truncated, info = self.env.step(ac)
-        if self._return_state:
-            self._state = ob.pop("state", None)
         self._frames.append(ob)
         return self._get_obs(), reward, terminated, truncated, info
 
@@ -501,13 +407,11 @@ class FrameStackWrapper(gym.Wrapper):
         obs = []
         for k in self.env.observation_space.spaces.keys():
             obs.append((k, np.concatenate([f[k] for f in frames], axis=-1)))
-        if self._return_state:
-            obs.append(("state", self._state))
-
         return OrderedDict(obs)
 
 
 class ActionNormWrapper(gym.Wrapper):
+    """Normalize action space to [-1, 1]."""
     def __init__(self, env):
         super().__init__(env)
 
@@ -536,25 +440,32 @@ class ActionNormWrapper(gym.Wrapper):
         return self.env.step(action)
 
 
-class AbsorbingWrapper(gym.Wrapper):
+class StateNormWrapper(gym.ObservationWrapper):
+    """Normalize state information to [-1, 1], but keeps images in [0, 255]."""
+
     def __init__(self, env):
         super().__init__(env)
-        ob_space = gym.spaces.Dict(spaces=dict(env.observation_space.spaces))
-        ob_space.spaces["absorbing_state"] = gym.spaces.Box(
-            low=-1, high=1, shape=(1,), dtype=np.uint8
-        )
-        self.observation_space = ob_space
 
-    def reset(self, seed=None):
-        ob, info = self.env.reset(seed=seed)
-        return self._get_obs(ob), info
+        assert isinstance(env.observation_space, gym.spaces.Dict), env.observation_space
 
-    def step(self, ac):
-        ob, reward, terminated, truncated, info = self.env.step(ac)
-        return self._get_obs(ob), reward, terminated, truncated, info
+        ob_space = []
+        self._low = {}
+        self._high = {}
+        for k, space in env.observation_space.spaces.items():
+            assert isinstance(space, gym.spaces.Box)
+            if space.dtype != np.uint8:
+                self._low[k] = low = space.low
+                self._high[k] = high = space.high
+                space = gym.spaces.Box(
+                    -np.ones_like(low), np.ones_like(high), dtype=space.dtype
+                )
+            ob_space.append((k, space))
+        self.observation_space = gym.spaces.Dict(ob_space)
 
-    def _get_obs(self, ob):
-        return get_non_absorbing_state(ob)
+    def observation(self, ob):
+        """Normalizes states within [-1, 1]."""
+        ob = ob.copy()
+        for k in self._low:
+            ob[k] = ((ob[k] - self._low[k]) / (self._high[k] - self._low[k]) - 0.5) * 2
 
-    def get_absorbing_state(self):
-        return get_absorbing_state(self.observation_space)
+        return ob

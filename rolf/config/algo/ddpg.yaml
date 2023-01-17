@@ -17,5 +17,3 @@ epsilon_greedy_eps: 0.3
 expl_noise: 0.1
 
 gaussian_policy: false
-
-absorbing_state: false

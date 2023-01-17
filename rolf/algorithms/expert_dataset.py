@@ -8,7 +8,6 @@ import numpy as np
 import gym.spaces
 
 from ..utils import Logger
-from ..utils.gym_env import get_non_absorbing_state, get_absorbing_state, zero_value
 
 
 class ExpertDataset(Dataset):
@@ -105,37 +104,6 @@ class ExpertDataset(Dataset):
         Logger.warning(
             f"Load {num_demos} demonstrations with {len(self._data)} states from {len(demo_files)} files",
         )
-
-    def add_absorbing_states(self, ob_space, ac_space):
-        new_data = []
-        absorbing_state = get_absorbing_state(ob_space)
-        absorbing_action = zero_value(ac_space, dtype=np.float32)
-        for i in range(len(self._data)):
-            transition = self._data[i].copy()
-            transition["ob"] = get_non_absorbing_state(self._data[i]["ob"])
-            # learn reward for the last transition regardless of timeout (different from paper)
-            if self._data[i]["done"]:
-                transition["ob_next"] = absorbing_state
-                transition["done_mask"] = 0  # -1 absorbing, 0 done, 1 not done
-            else:
-                transition["ob_next"] = get_non_absorbing_state(
-                    self._data[i]["ob_next"]
-                )
-                transition["done_mask"] = 1  # -1 absorbing, 0 done, 1 not done
-            new_data.append(transition)
-
-            if self._data[i]["done"]:
-                transition = {
-                    "ob": absorbing_state,
-                    "ob_next": absorbing_state,
-                    "ac": absorbing_action,
-                    # "rew": np.float64(0.0),
-                    "done": 0,
-                    "done_mask": -1,  # -1 absorbing, 0 done, 1 not done
-                }
-                new_data.append(transition)
-
-        self._data = new_data
 
     def _get_demo_files(self, demo_file_path):
         demos = []

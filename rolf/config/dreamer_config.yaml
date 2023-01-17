@@ -12,7 +12,6 @@ env:
     screen_size: [64, 64]
     action_repeat: 2
     frame_stack: 1
-    absorbing_state: false
     pixel_ob: true
     state_ob: false
 

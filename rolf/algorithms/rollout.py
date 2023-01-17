@@ -8,7 +8,6 @@ import numpy as np
 import cv2
 
 from ..utils import Logger, Info, Every
-from ..utils.gym_env import zero_value
 
 
 class Rollout(object):
@@ -128,7 +127,6 @@ class RolloutRunner(object):
                 if il:
                     ep_rew_il += reward_il
 
-                # -1 absorbing, 0 done, 1 not done
                 done_mask = truncated
 
                 rollout.add(dict(ob=ob, ob_next=ob_next, ac=ac, done=done, rew=reward))
@@ -136,14 +134,6 @@ class RolloutRunner(object):
                 rollout_len += 1
 
                 reward_info.add(info)
-
-                if cfg.env.absorbing_state and done_mask == 0:
-                    absorbing_state = env.get_absorbing_state()
-                    absorbing_action = zero_value(env.action_space)
-                    rollout._history["ob"][-1] = absorbing_state
-                    rollout.add(dict(ob=absorbing_state, ac=absorbing_action))
-                    rollout.add(dict(done=0, rew=0.0, done_mask=-1))
-                    rollout_len += 1
 
                 if every_steps(step):
                     yield rollout.get(), rollout_len, ep_info.get_dict(only_scalar=True)

@@ -13,5 +13,3 @@ critic_mlp_dim: [256, 256]
 critic_ensemble: 1
 critic_lr: 3e-4
 critic_soft_update_weight: 0.995
-
-absorbing_state: false

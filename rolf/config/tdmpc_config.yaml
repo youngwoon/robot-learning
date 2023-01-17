@@ -8,12 +8,12 @@ defaults:
 
 env:
   id: dm.quadruped.walk
-  screen_size: [64, 64]
-  action_repeat: 2
-  frame_stack: 3
-  absorbing_state: false
-  pixel_ob: false
-  state_ob: true
+  env_cfg:
+    screen_size: [64, 64]
+    action_repeat: 2
+    frame_stack: 3
+    pixel_ob: false
+    state_ob: true
 
 rolf:
   max_global_step: 500000
