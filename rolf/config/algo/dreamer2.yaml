@@ -2,7 +2,7 @@ defaults:
   - common
   - _self_
 
-name: dreamer
+name: dreamer2
 
 # Training
 max_global_step: 2000000
@@ -12,6 +12,8 @@ train_iter: 1
 log_every: 500
 evaluate_every: 10000
 ckpt_every: 50000
+
+precision: 16
 
 batch_size: 50
 batch_length: 50  # RNN sequence length

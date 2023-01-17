@@ -263,8 +263,8 @@ class DreamerAgent(BaseAgent):
                     recon = ob_pred[k].mode()[:4]
                     model = torch.cat([recon[:, :5] + 0.5, openloop[k] + 0.5], 1)
                     error = (model - truth + 1) / 2
-                    openloop = torch.cat([truth, model, error], 2)
-                    img = openloop.detach().cpu().numpy() * 255
+                    openloop[k] = torch.cat([truth, model, error], 2)
+                    img = openloop[k].detach().cpu().numpy() * 255
                     info[f"recon_{k}"] = img.transpose(0, 1, 4, 2, 3).astype(np.uint8)
 
         if getattr(cfg, "maze_visualize", False):
@@ -309,7 +309,10 @@ class DreamerAgent(BaseAgent):
         """
         latent, action = state or self.initial_state(ob)
         embed = self.model.encoder(self.preprocess(ob))
-        latent = self.model.obs_step(latent, action, embed)
+        try:
+            latent = self.model.obs_step(latent, action, embed)
+        except Exception as e:
+            import ipdb; ipdb.set_trace()
         feat = self.model.get_feat(latent)
         action = self.actor.act(feat, deterministic=not is_train)
         if is_train:

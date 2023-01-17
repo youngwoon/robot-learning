@@ -121,10 +121,14 @@ class TanhNormal_(torch.distributions.transformed_distribution.TransformedDistri
     def mean(self):
         return self.base_dist.mean.tanh()
 
+    def log_prob(self, value):
+        value = torch.clamp(value, -0.99999997, 0.99999997)
+        return super().log_prob(value)
+
 
 class TanhNormal(torch.distributions.Independent):
     def __init__(self, mean, std, event_dim=0):
-        super().__init__(TanhNormal_(mean, std), event_dim)
+        super().__init__(TanhNormal_(torch.clamp(mean, -9.0, 9.0), std), event_dim)
 
     def mode(self):
         return self.mean

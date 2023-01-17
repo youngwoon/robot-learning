@@ -13,6 +13,8 @@ log_every: 500
 evaluate_every: 10000
 ckpt_every: 50000
 
+precision: 16
+
 batch_size: 50
 batch_length: 50  # RNN sequence length
 model_lr: 6e-4

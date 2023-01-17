@@ -18,6 +18,7 @@ RL_ALGOS = {
     "ddpg": DDPGAgent,
     "td3": DDPGAgent,
     "dreamer": DreamerAgent,
+    "dreamer2": DreamerAgent,
     "tdmpc": TDMPCAgent,
 }
 
