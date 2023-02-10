@@ -2,7 +2,8 @@ import io
 import psutil
 import time
 from pathlib import Path
-from collections import OrderedDict, MutableMapping
+from collections import OrderedDict
+from collections.abc import MutableMapping
 
 import numpy as np
 import torch
