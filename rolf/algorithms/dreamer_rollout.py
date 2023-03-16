@@ -98,7 +98,9 @@ class DreamerRolloutRunner(RolloutRunner):
             reward_info_dict.update({"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl})
             if ep_rew_rl > 15000:
                 print("Exceedingly high rewards encountered!")
-                import ipdb; ipdb.set_trace()
+                import ipdb
+
+                ipdb.set_trace()
             ep_info.add(reward_info_dict)
 
             Logger.info(
@@ -164,7 +166,9 @@ class DreamerRolloutRunner(RolloutRunner):
             flat_ac = gym.spaces.flatten(env.action_space, ac)
             if record_reward:
                 reward_pred = agent.predict_reward(state_next)
-                rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward, rew_pred=reward_pred))
+                rollout.add(
+                    dict(ob=ob, ac=flat_ac, done=done, rew=reward, rew_pred=reward_pred)
+                )
             else:
                 rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward))
 

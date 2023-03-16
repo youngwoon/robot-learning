@@ -313,7 +313,6 @@ class Trainer(object):
                     for i, v_i in enumerate(v):
                         wandb.log({f"test_ep{name}/{k}_{i}": v_i}, step=step)
 
-
     def _update_normalizer(self, rollout):
         """Updates normalizer with `rollout`."""
         if self._cfg.rolf.ob_norm:
@@ -331,10 +330,12 @@ class Trainer(object):
         Logger.warning(f"Run {cfg.num_eval} evaluations at step={step}")
         rollouts = []
         info_history = Info()
-            
+
         for i in range(cfg.num_eval):
             Logger.info(f"Evaluate run {i + 1}")
-            rollout, info, frames = self._runner.run_episode(record_video=record_video, record_reward=record_reward)
+            rollout, info, frames = self._runner.run_episode(
+                record_video=record_video, record_reward=record_reward
+            )
             rollouts.append(rollout)
 
             if record_video:
@@ -349,8 +350,8 @@ class Trainer(object):
                     )
 
             if record_reward:
-                rew = [x.item() for x in rollout['rew']]
-                rew_pred = [x.item() for x in rollout['rew_pred']]
+                rew = [x.item() for x in rollout["rew"]]
+                rew_pred = [x.item() for x in rollout["rew_pred"]]
                 total_rew = sum(rew)
                 fname = f"{cfg.env.id}_step_{step:011d}_{i}_r_{total_rew:.3f}.png"
                 # plot rew
@@ -367,7 +368,9 @@ class Trainer(object):
         fig1, ax1 = plt.subplots(nrows=1, ncols=1)
         ax1.plot(rew, label="Observed")
         ax1.plot(rew_pred, label="Predicted")
-        ax1.set_title(f"Evaluation episode. Total Reward = {total_rew:.3f}, Predicted = {total_pred:.3f}")
+        ax1.set_title(
+            f"Evaluation episode. Total Reward = {total_rew:.3f}, Predicted = {total_pred:.3f}"
+        )
         ax1.set_xlabel("Step number")
         ax1.set_ylabel("Reward")
         ax1.legend()

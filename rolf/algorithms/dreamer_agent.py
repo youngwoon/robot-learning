@@ -96,7 +96,6 @@ class DreamerAgent(BaseAgent):
         self.model.train()
         return rew.cpu().numpy()
 
-
     def get_runner(self, cfg, env, env_eval):
         """Returns rollout runner."""
         return DreamerRolloutRunner(cfg, env, env_eval, self)
@@ -198,9 +197,8 @@ class DreamerAgent(BaseAgent):
                     div_lhs_clipped = torch.clamp(div_lhs.mean(), min=cfg.free_nats)
                     div_rhs_clipped = torch.clamp(div_rhs.mean(), min=cfg.free_nats)
                     div_clipped = (
-                        (1 - cfg.kl_balance) * div_lhs_clipped
-                        + cfg.kl_balance * div_rhs_clipped
-                    )
+                        1 - cfg.kl_balance
+                    ) * div_lhs_clipped + cfg.kl_balance * div_rhs_clipped
                 else:
                     div = torch.distributions.kl.kl_divergence(
                         post_dist, prior_dist
@@ -255,9 +253,14 @@ class DreamerAgent(BaseAgent):
         info["critic_loss"] = critic_loss.item()
         info["value_target"] = imagine_return.mean().item()
         info["value_predicted"] = value_pred.mode().mean().item()
-        if value_pred.mode().mean().item() > 25000: # detect issues
-            print("Exceedingly high predicted value detected: ", value_pred.mode().mean().item())
-            import ipdb; ipdb.set_trace()
+        if value_pred.mode().mean().item() > 25000:  # detect issues
+            print(
+                "Exceedingly high predicted value detected: ",
+                value_pred.mode().mean().item(),
+            )
+            import ipdb
+
+            ipdb.set_trace()
         info["model_grad_norm"] = model_grad_norm.item()
         info["actor_grad_norm"] = actor_grad_norm.item()
         info["critic_grad_norm"] = critic_grad_norm.item()
@@ -327,7 +330,9 @@ class DreamerAgent(BaseAgent):
         try:
             latent = self.model.obs_step(latent, action, embed)
         except Exception as e:
-            import ipdb; ipdb.set_trace()
+            import ipdb
+
+            ipdb.set_trace()
         feat = self.model.get_feat(latent)
         action = self.actor.act(feat, deterministic=not is_train)
         if is_train:

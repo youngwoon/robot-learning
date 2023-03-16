@@ -342,6 +342,7 @@ class ActionRepeatWrapper(gym.Wrapper):
 
 class DictWrapper(gym.Wrapper):
     """Make observation space and action space gym.spaces.Dict."""
+
     def __init__(self, env):
         super().__init__(env)
 
@@ -412,6 +413,7 @@ class FrameStackWrapper(gym.Wrapper):
 
 class ActionNormWrapper(gym.Wrapper):
     """Normalize action space to [-1, 1]."""
+
     def __init__(self, env):
         super().__init__(env)
 
