@@ -86,6 +86,17 @@ class DreamerAgent(BaseAgent):
 
         return ac, state_next
 
+    @torch.no_grad()
+    def predict_reward(self, state):
+        self.model.eval()
+        latent = state[0]
+        with torch.autocast(self._cfg.device, enabled=self._use_amp):
+            feat = self.model.get_feat(latent)
+            rew = self.model.reward(feat).mean
+        self.model.train()
+        return rew.cpu().numpy()
+
+
     def get_runner(self, cfg, env, env_eval):
         """Returns rollout runner."""
         return DreamerRolloutRunner(cfg, env, env_eval, self)
@@ -244,6 +255,9 @@ class DreamerAgent(BaseAgent):
         info["critic_loss"] = critic_loss.item()
         info["value_target"] = imagine_return.mean().item()
         info["value_predicted"] = value_pred.mode().mean().item()
+        if value_pred.mode().mean().item() > 25000: # detect issues
+            print("Exceedingly high predicted value detected: ", value_pred.mode().mean().item())
+            import ipdb; ipdb.set_trace()
         info["model_grad_norm"] = model_grad_norm.item()
         info["actor_grad_norm"] = actor_grad_norm.item()
         info["critic_grad_norm"] = critic_grad_norm.item()
@@ -264,7 +278,8 @@ class DreamerAgent(BaseAgent):
                     model = torch.cat([recon[:, :5] + 0.5, openloop[k] + 0.5], 1)
                     error = (model - truth + 1) / 2
                     openloop[k] = torch.cat([truth, model, error], 2)
-                    img = openloop[k].detach().cpu().numpy() * 255
+                    # img = openloop[k].detach().cpu().numpy() * 255
+                    img = np.clip(openloop[k].detach().cpu().numpy() * 255, 0, 255)
                     info[f"recon_{k}"] = img.transpose(0, 1, 4, 2, 3).astype(np.uint8)
 
         if getattr(cfg, "maze_visualize", False):

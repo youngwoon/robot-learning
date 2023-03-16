@@ -18,6 +18,7 @@ pretrain: false
 ckpt_num: null
 num_eval: 1
 record_video: true
+record_reward: false
 record_video_caption: true
 record_demo: false
 

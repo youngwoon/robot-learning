@@ -11,6 +11,7 @@ import wandb
 import h5py
 import imageio
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from .algorithms import RL_ALGOS, IL_ALGOS
@@ -138,7 +139,7 @@ class Trainer(object):
 
             if should_evaluate(step):
                 Logger.info(f"Evaluate at step={step}")
-                _, ep_info = self._evaluate(step, cfg.record_video)
+                _, ep_info = self._evaluate(step, cfg.record_video, cfg.record_reward)
                 self._log_test(step, ep_info.get_dict())
 
             if should_ckpt(step):
@@ -158,9 +159,10 @@ class Trainer(object):
         step = ckpt_info.get("step", 0)
 
         Logger.info(f"Run {cfg.num_eval} evaluations at step={step}")
-        rollouts, info = self._evaluate(step, cfg.record_video)
+        rollouts, info = self._evaluate(step, cfg.record_video, cfg.record_reward)
         Logger.info(f"Done evaluating {cfg.num_eval} episodes")
-        self._log_test(step, info, rollouts=rollouts)
+        self._log_test(step, info)
+        Logger.info(f"Done logging")
 
         # Save successful terminal states for T-STAR.
         if "episode_success_state" in info.keys():
@@ -305,26 +307,34 @@ class Trainer(object):
                     wandb.log({f"test_ep{name}/{k}": np.mean(v)}, step=step)
                 elif isinstance(v, LOG_TYPES):
                     wandb.log({f"test_ep{name}/{k}": v}, step=step)
+                elif isinstance(v, plt.Figure):
+                    wandb.log({f"test_ep{name}/{k}": v}, step=step)
+                elif isinstance(v, list) and isinstance(v[0], plt.Figure):
+                    for i, v_i in enumerate(v):
+                        wandb.log({f"test_ep{name}/{k}_{i}": v_i}, step=step)
+
 
     def _update_normalizer(self, rollout):
         """Updates normalizer with `rollout`."""
         if self._cfg.rolf.ob_norm:
             self._agent.update_normalizer(rollout["ob"])
 
-    def _evaluate(self, step=None, record_video=False):
+    def _evaluate(self, step=None, record_video=False, record_reward=False):
         """Runs `self._cfg.num_eval` rollouts.
 
         Args:
             step: the number of environment steps.
             record_video: whether to record video or not.
+            record_reward: whether to record plot of predicted and actual rewards
         """
         cfg = self._cfg
         Logger.warning(f"Run {cfg.num_eval} evaluations at step={step}")
         rollouts = []
         info_history = Info()
+            
         for i in range(cfg.num_eval):
-            Logger.info(f"Evalute run {i + 1}")
-            rollout, info, frames = self._runner.run_episode(record_video=record_video)
+            Logger.info(f"Evaluate run {i + 1}")
+            rollout, info, frames = self._runner.run_episode(record_video=record_video, record_reward=record_reward)
             rollouts.append(rollout)
 
             if record_video:
@@ -338,9 +348,30 @@ class Trainer(object):
                         video_path, caption=caption, fps=15, format="mp4"
                     )
 
+            if record_reward:
+                rew = [x.item() for x in rollout['rew']]
+                rew_pred = [x.item() for x in rollout['rew_pred']]
+                total_rew = sum(rew)
+                fname = f"{cfg.env.id}_step_{step:011d}_{i}_r_{total_rew:.3f}.png"
+                # plot rew
+                fig1 = self._create_rew_plot(rew, rew_pred)
+                fig1.savefig(Path(self._cfg.video_dir) / fname)
+                info["rew_ep"] = fig1
             info_history.add(info)
 
         return rollouts, info_history
+
+    def _create_rew_plot(self, rew, rew_pred):
+        total_rew = sum(rew)
+        total_pred = sum(rew_pred)
+        fig1, ax1 = plt.subplots(nrows=1, ncols=1)
+        ax1.plot(rew, label="Observed")
+        ax1.plot(rew_pred, label="Predicted")
+        ax1.set_title(f"Evaluation episode. Total Reward = {total_rew:.3f}, Predicted = {total_pred:.3f}")
+        ax1.set_xlabel("Step number")
+        ax1.set_ylabel("Reward")
+        ax1.legend()
+        return fig1
 
     def _save_video(self, file_name, frames, fps=15.0):
         """Saves `frames` into a video with file name `file_name`."""

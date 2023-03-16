@@ -96,6 +96,9 @@ class DreamerRolloutRunner(RolloutRunner):
             # compute average/sum of information
             reward_info_dict = reward_info.get_dict(reduction="sum", only_scalar=True)
             reward_info_dict.update({"len": ep_len, "rew": ep_rew, "rew_rl": ep_rew_rl})
+            if ep_rew_rl > 15000:
+                print("Exceedingly high rewards encountered!")
+                import ipdb; ipdb.set_trace()
             ep_info.add(reward_info_dict)
 
             Logger.info(
@@ -112,7 +115,7 @@ class DreamerRolloutRunner(RolloutRunner):
                 yield rollout.get(), rollout_len, ep_info.get_dict(only_scalar=True)
                 rollout_len = 0
 
-    def run_episode(self, record_video=False):
+    def run_episode(self, record_video=False, record_reward=False):
         """
         Runs one episode and returns the rollout for evaluation.
 
@@ -124,7 +127,11 @@ class DreamerRolloutRunner(RolloutRunner):
         agent = self._agent
 
         # initialize rollout buffer
-        rollout = Rollout(["ob", "ac", "rew", "done"], cfg.rolf.precision)
+        if record_reward:
+            rollout_keys = ["ob", "ac", "rew", "rew_pred", "done"]
+        else:
+            rollout_keys = ["ob", "ac", "rew", "done"]
+        rollout = Rollout(rollout_keys, cfg.rolf.precision)
         reward_info = Info()
 
         done = False
@@ -155,7 +162,11 @@ class DreamerRolloutRunner(RolloutRunner):
             reward_rl = reward * cfg.rolf.reward_scale
 
             flat_ac = gym.spaces.flatten(env.action_space, ac)
-            rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward))
+            if record_reward:
+                reward_pred = agent.predict_reward(state_next)
+                rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward, rew_pred=reward_pred))
+            else:
+                rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward))
 
             ep_len += 1
             ep_rew += reward
