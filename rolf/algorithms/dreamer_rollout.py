@@ -154,7 +154,9 @@ class DreamerRolloutRunner(RolloutRunner):
             state = state_next
 
             # sample action from policy
-            ac, state_next = agent.act(ob, state, is_train=False) #TODO: Get extras (reconstructed image)
+            ac, state_next = agent.act(
+                ob, state, is_train=False
+            )  # TODO: Get extras (reconstructed image)
 
             # take a step
             ob_next, reward, terminated, truncated, info = env.step(ac)
@@ -170,7 +172,14 @@ class DreamerRolloutRunner(RolloutRunner):
                 if state is not None:
                     kl_div = agent.get_kl(state, flat_ac, state_next)
                 rollout.add(
-                    dict(ob=ob, ac=flat_ac, done=done, rew=reward, rew_pred=reward_pred, kl_div=kl_div) #TODO add reconstruction
+                    dict(
+                        ob=ob,
+                        ac=flat_ac,
+                        done=done,
+                        rew=reward,
+                        rew_pred=reward_pred,
+                        kl_div=kl_div,
+                    )  # TODO add reconstruction
                 )
             else:
                 rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward))

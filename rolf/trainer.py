@@ -341,7 +341,9 @@ class Trainer(object):
             if record_video:
                 rew = info["rew"]
                 success = "s" if info.get("episode_success", False) else "f"
-                fname_rew = f"{cfg.env.id}_step_{step:011d}_{i}_r_{rew:.3f}_{success}.mp4"
+                fname_rew = (
+                    f"{cfg.env.id}_step_{step:011d}_{i}_r_{rew:.3f}_{success}.mp4"
+                )
                 video_path = self._save_video(fname_rew, frames)
                 if cfg.is_train:
                     caption = f"{cfg.run_name}-{step}-{i}"
@@ -354,7 +356,7 @@ class Trainer(object):
                 rew_pred = [x.item() for x in rollout["rew_pred"]]
                 kl_div = [x.item() for x in rollout["kl_div"]]
                 total_rew = sum(rew)
-                mean_kl = sum(kl_div)/len(kl_div)
+                mean_kl = sum(kl_div) / len(kl_div)
                 fname_rew = f"{cfg.env.id}_step_{step:011d}_{i}_r_{total_rew:.3f}.png"
                 fname_kl = f"{cfg.env.id}_step_{step:011d}_{i}_kl_{mean_kl:.3f}.png"
                 # plot rew
@@ -382,14 +384,12 @@ class Trainer(object):
         ax1.set_ylabel("Reward")
         ax1.legend()
         return fig1
-    
+
     def _create_kl_plot(self, kl_div):
-        mean_kl = sum(kl_div)/len(kl_div)
+        mean_kl = sum(kl_div) / len(kl_div)
         fig1, ax1 = plt.subplots(nrows=1, ncols=1)
         ax1.plot(kl_div)
-        ax1.set_title(
-            f"Evaluation episode. Mean KL = {mean_kl:.3f}"
-        )
+        ax1.set_title(f"Evaluation episode. Mean KL = {mean_kl:.3f}")
         ax1.set_xlabel("Step number")
         ax1.set_ylabel("KL Divergence")
         return fig1
