@@ -49,6 +49,9 @@ kl_balance: 0.8
 ent_coef: 1e-4
 pcont_scale: 10.0
 weight_decay: 0.0
+recon_loss_scale: 1.0
+ob_loss_scale: 1.0
+rew_loss_scale: 1.0
 
 encoder:
   image_shape: [64, 64, 3]

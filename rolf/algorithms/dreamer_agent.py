@@ -96,6 +96,20 @@ class DreamerAgent(BaseAgent):
         self.model.train()
         return rew.cpu().numpy()
 
+    @torch.no_grad()
+    def get_kl(self, state, ac, state_next):
+        self.model.eval()
+        with torch.autocast(self._cfg.device, enabled=self._use_amp):
+            ac = torch.tensor(ac).unsqueeze(0).to(self._cfg.device)
+            prior = self.model.imagine_step(state[0], ac)
+            prior_dist = self.model.get_dist(prior)
+            post_dist = self.model.get_dist(state_next[0])
+            div = torch.distributions.kl.kl_divergence(
+                post_dist, prior_dist
+            )
+        self.model.train()
+        return div.cpu().numpy()
+
     def get_runner(self, cfg, env, env_eval):
         """Returns rollout runner."""
         return DreamerRolloutRunner(cfg, env, env_eval, self)
@@ -175,11 +189,11 @@ class DreamerAgent(BaseAgent):
                 feat = self.model.get_feat(post)
 
                 ob_pred = self.model.decoder(feat)
-                recon_losses = {k: -ob_pred[k].log_prob(v).mean() for k, v in o.items()}
+                recon_losses = {k: (-cfg.recon_loss_scale*ob_pred[k].log_prob(v).mean()) if len(v.shape) > 3 else (-cfg.ob_loss_scale * ob_pred[k].log_prob(v).mean()) for k, v in o.items()}
                 recon_loss = sum(recon_losses.values())
 
                 reward_pred = self.model.reward(feat)
-                reward_loss = -reward_pred.log_prob(rew.unsqueeze(-1)).mean()
+                reward_loss = -cfg.rew_loss_scale*reward_pred.log_prob(rew.unsqueeze(-1)).mean()
 
                 prior_dist = self.model.get_dist(prior)
                 post_dist = self.model.get_dist(post)

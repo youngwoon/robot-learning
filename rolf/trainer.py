@@ -139,7 +139,7 @@ class Trainer(object):
 
             if should_evaluate(step):
                 Logger.info(f"Evaluate at step={step}")
-                _, ep_info = self._evaluate(step, cfg.record_video, cfg.record_reward)
+                _, ep_info = self._evaluate(step, cfg.record_video, cfg.record_extra)
                 self._log_test(step, ep_info.get_dict())
 
             if should_ckpt(step):
@@ -159,7 +159,7 @@ class Trainer(object):
         step = ckpt_info.get("step", 0)
 
         Logger.info(f"Run {cfg.num_eval} evaluations at step={step}")
-        rollouts, info = self._evaluate(step, cfg.record_video, cfg.record_reward)
+        rollouts, info = self._evaluate(step, cfg.record_video, cfg.record_extra)
         Logger.info(f"Done evaluating {cfg.num_eval} episodes")
         self._log_test(step, info)
         Logger.info(f"Done logging")
@@ -318,13 +318,13 @@ class Trainer(object):
         if self._cfg.rolf.ob_norm:
             self._agent.update_normalizer(rollout["ob"])
 
-    def _evaluate(self, step=None, record_video=False, record_reward=False):
+    def _evaluate(self, step=None, record_video=False, record_extra=False):
         """Runs `self._cfg.num_eval` rollouts.
 
         Args:
             step: the number of environment steps.
             record_video: whether to record video or not.
-            record_reward: whether to record plot of predicted and actual rewards
+            record_extra: whether to record plot of predicted and actual rewards, plot of kl divergence
         """
         cfg = self._cfg
         Logger.warning(f"Run {cfg.num_eval} evaluations at step={step}")
@@ -334,30 +334,37 @@ class Trainer(object):
         for i in range(cfg.num_eval):
             Logger.info(f"Evaluate run {i + 1}")
             rollout, info, frames = self._runner.run_episode(
-                record_video=record_video, record_reward=record_reward
+                record_video=record_video, record_extra=record_extra
             )
             rollouts.append(rollout)
 
             if record_video:
                 rew = info["rew"]
                 success = "s" if info.get("episode_success", False) else "f"
-                fname = f"{cfg.env.id}_step_{step:011d}_{i}_r_{rew:.3f}_{success}.mp4"
-                video_path = self._save_video(fname, frames)
+                fname_rew = f"{cfg.env.id}_step_{step:011d}_{i}_r_{rew:.3f}_{success}.mp4"
+                video_path = self._save_video(fname_rew, frames)
                 if cfg.is_train:
                     caption = f"{cfg.run_name}-{step}-{i}"
                     info["video"] = wandb.Video(
                         video_path, caption=caption, fps=15, format="mp4"
                     )
 
-            if record_reward:
+            if record_extra:
                 rew = [x.item() for x in rollout["rew"]]
                 rew_pred = [x.item() for x in rollout["rew_pred"]]
+                kl_div = [x.item() for x in rollout["kl_div"]]
                 total_rew = sum(rew)
-                fname = f"{cfg.env.id}_step_{step:011d}_{i}_r_{total_rew:.3f}.png"
+                mean_kl = sum(kl_div)/len(kl_div)
+                fname_rew = f"{cfg.env.id}_step_{step:011d}_{i}_r_{total_rew:.3f}.png"
+                fname_kl = f"{cfg.env.id}_step_{step:011d}_{i}_kl_{mean_kl:.3f}.png"
                 # plot rew
                 fig1 = self._create_rew_plot(rew, rew_pred)
-                fig1.savefig(Path(self._cfg.video_dir) / fname)
+                fig1.savefig(Path(self._cfg.video_dir) / fname_rew)
                 info["rew_ep"] = fig1
+                # plot kl
+                fig2 = self._create_kl_plot(kl_div)
+                fig2.savefig(Path(self._cfg.video_dir) / fname_kl)
+                info["kl_ep"] = fig2
             info_history.add(info)
 
         return rollouts, info_history
@@ -374,6 +381,17 @@ class Trainer(object):
         ax1.set_xlabel("Step number")
         ax1.set_ylabel("Reward")
         ax1.legend()
+        return fig1
+    
+    def _create_kl_plot(self, kl_div):
+        mean_kl = sum(kl_div)/len(kl_div)
+        fig1, ax1 = plt.subplots(nrows=1, ncols=1)
+        ax1.plot(kl_div)
+        ax1.set_title(
+            f"Evaluation episode. Mean KL = {mean_kl:.3f}"
+        )
+        ax1.set_xlabel("Step number")
+        ax1.set_ylabel("KL Divergence")
         return fig1
 
     def _save_video(self, file_name, frames, fps=15.0):

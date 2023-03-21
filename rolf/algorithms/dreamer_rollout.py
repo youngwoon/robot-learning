@@ -117,7 +117,7 @@ class DreamerRolloutRunner(RolloutRunner):
                 yield rollout.get(), rollout_len, ep_info.get_dict(only_scalar=True)
                 rollout_len = 0
 
-    def run_episode(self, record_video=False, record_reward=False):
+    def run_episode(self, record_video=False, record_extra=False):
         """
         Runs one episode and returns the rollout for evaluation.
 
@@ -129,8 +129,8 @@ class DreamerRolloutRunner(RolloutRunner):
         agent = self._agent
 
         # initialize rollout buffer
-        if record_reward:
-            rollout_keys = ["ob", "ac", "rew", "rew_pred", "done"]
+        if record_extra:
+            rollout_keys = ["ob", "ac", "rew", "rew_pred", "kl_div", "done"]
         else:
             rollout_keys = ["ob", "ac", "rew", "done"]
         rollout = Rollout(rollout_keys, cfg.rolf.precision)
@@ -154,7 +154,7 @@ class DreamerRolloutRunner(RolloutRunner):
             state = state_next
 
             # sample action from policy
-            ac, state_next = agent.act(ob, state, is_train=False)
+            ac, state_next = agent.act(ob, state, is_train=False) #TODO: Get extras (reconstructed image)
 
             # take a step
             ob_next, reward, terminated, truncated, info = env.step(ac)
@@ -164,10 +164,13 @@ class DreamerRolloutRunner(RolloutRunner):
             reward_rl = reward * cfg.rolf.reward_scale
 
             flat_ac = gym.spaces.flatten(env.action_space, ac)
-            if record_reward:
+            if record_extra:
                 reward_pred = agent.predict_reward(state_next)
+                kl_div = 0
+                if state is not None:
+                    kl_div = agent.get_kl(state, flat_ac, state_next)
                 rollout.add(
-                    dict(ob=ob, ac=flat_ac, done=done, rew=reward, rew_pred=reward_pred)
+                    dict(ob=ob, ac=flat_ac, done=done, rew=reward, rew_pred=reward_pred, kl_div=kl_div) #TODO add reconstruction
                 )
             else:
                 rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward))
