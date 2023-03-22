@@ -9,14 +9,14 @@ import gym.spaces
 from .base_agent import BaseAgent
 from .dataset import ReplayBufferEpisode, SeqSampler
 from .dreamer_rollout import DreamerRolloutRunner
-from ..networks.dreamer import DreamerModel, DenseDecoder, ActionDecoder
+from ..networks.dreamer import DreamerModel, ActionDecoder, DenseDecoder
 from ..utils import Logger, Once, Every, Info, StopWatch
 from ..utils.pytorch import optimizer_cuda, count_parameters
 from ..utils.pytorch import to_tensor, RequiresGrad, AdamAMP
 from ..utils.dreamer import static_scan, lambda_return
 
 
-class DreamerAgent(BaseAgent):
+class Dreamer3Agent(BaseAgent):
     def __init__(self, cfg, ob_space, ac_space):
         super().__init__(cfg, ob_space)
         self._ob_space = ob_space
@@ -143,7 +143,7 @@ class DreamerAgent(BaseAgent):
 
         info = train_info.get_dict()
         Logger.info(
-            f"model_grad: {info['model_grad_norm']:.1f} / actor_grad: {info['actor_grad_norm']:.1f} / critic_grad: {info['critic_grad_norm']:.1f} / model_loss: {info['model_loss']:.1f} / actor_loss: {info['actor_loss']:.1f} / critic_loss: {info['critic_loss']:.1f} / prior_ent: {info['prior_entropy']:.1f} / post_ent: {info['posterior_entropy']:.1f} / reward_loss: {info['reward_loss']:.1f} / div: {info['kl_loss']:.1f} / actor_ent: {info['actor_entropy']:.1f}"
+            f"model_grad: {info['model_grad_norm']:.1f} / actor_grad: {info['actor_grad_norm']:.1f} / critic_grad: {info['critic_grad_norm']:.1f} / model_loss: {info['model_loss']:.1f} / actor_loss: {info['actor_loss']:.1f} / critic_loss: {info['critic_loss']:.1f} / value_target: {info['value_target']:.1f} / value_predicted: {info['value_predicted']:.1f} / prior_ent: {info['prior_entropy']:.1f} / post_ent: {info['posterior_entropy']:.1f} / reward_loss: {info['reward_loss']:.1f} / div: {info['kl_loss']:.1f} / actor_ent: {info['actor_entropy']:.1f}"
         )
         return info
 
@@ -151,12 +151,10 @@ class DreamerAgent(BaseAgent):
         info = Info()
         cfg = self._cfg
 
-        # o = to_tensor(batch["ob"], self._device, self._dtype)
-        # ac = to_tensor(batch["ac"], self._device, self._dtype)
-        # rew = to_tensor(batch["rew"], self._device, self._dtype)
         o = batch["ob"]
         ac = batch["ac"]
         rew = batch["rew"]
+        done = batch["done"]
         o = self.preprocess(o)
 
         # Compute model loss
@@ -176,27 +174,19 @@ class DreamerAgent(BaseAgent):
                 prior_dist = self.model.get_dist(prior)
                 post_dist = self.model.get_dist(post)
 
-                if cfg.kl_balance:
-                    with torch.no_grad():
-                        prior_dist_sg = self.model.get_dist(prior)
-                        post_dist_sg = self.model.get_dist(post)
-                    div_lhs = torch.distributions.kl.kl_divergence(
-                        post_dist, prior_dist_sg
-                    )
-                    div_rhs = torch.distributions.kl.kl_divergence(
-                        post_dist_sg, prior_dist
-                    )
-                    div_lhs_clipped = torch.clamp(div_lhs.mean(), min=cfg.free_nats)
-                    div_rhs_clipped = torch.clamp(div_rhs.mean(), min=cfg.free_nats)
-                    div_clipped = (
-                        1 - cfg.kl_balance
-                    ) * div_lhs_clipped + cfg.kl_balance * div_rhs_clipped
-                else:
-                    div = torch.distributions.kl.kl_divergence(
-                        post_dist, prior_dist
-                    ).mean()
-                    div_clipped = torch.clamp(div, min=cfg.free_nats)
-                model_loss = cfg.kl_scale * div_clipped + recon_loss + reward_loss
+                with torch.no_grad():
+                    prior_dist_sg = self.model.get_dist(prior)
+                    post_dist_sg = self.model.get_dist(post)
+                div_lhs = torch.distributions.kl.kl_divergence(
+                    post_dist, prior_dist_sg
+                )  # representation loss
+                div_rhs = torch.distributions.kl.kl_divergence(
+                    post_dist_sg, prior_dist
+                )  # dynamics loss
+                div_lhs_clipped = torch.clamp(div_lhs.mean(), min=cfg.free_nats)
+                div_rhs_clipped = torch.clamp(div_rhs.mean(), min=cfg.free_nats)
+                div_clipped = 0.1 * div_lhs_clipped + 0.5 * div_rhs_clipped
+                model_loss = div_clipped + recon_loss + reward_loss
             model_grad_norm = self.model_optim.step(model_loss)
 
         # Compute actor loss with imaginary rollout

@@ -14,8 +14,19 @@ from . import Logger
 from .subproc_vec_env import SubprocEnv, SubprocVecEnv
 
 
-def make_env(id, cfg=None, seed=0, wrapper=True):
-    """Creates a new environment instance with `id` and `cfg`."""
+def make_env(id, cfg, seed=0, num_envs=1):
+    """Creates `nenvs` environments with `id` and `cfg`."""
+    wrapper = cfg.env_cfg.get("wrapper", True)
+    env_fns = [lambda: make_one_env(id, cfg, seed + i, wrapper) for i in range(num_envs)]
+    if num_envs == 1:
+        if cfg.env_cfg.get("subprocess", False):
+            return SubprocEnv(env_fns[0])
+        return env_fns[0]()
+    return SubprocVecEnv(env_fns)
+
+
+def make_one_env(id, cfg, seed, wrapper):
+    """Creates an environment instance with `id` and `cfg`."""
     # Create a maze environment
     if id == "maze":
         from envs.maze import ACRandMaze0S40Env
@@ -100,8 +111,6 @@ def get_gym_env(env_id, cfg, seed):
         )
     elif "IKEA" in env_id or "furniture" in env_id:
         env = gym.make(env_id, **env_kwargs)
-    elif env_cfg.subprocess:
-        env = SubprocEnv(lambda: gym.make(env_id, **env_kwargs))
     else:
         env = gym.make(env_id, **env_kwargs)
 
@@ -181,34 +190,6 @@ class DMCGymEnv(gym.Env):
         return self._env.physics.render(
             height=self.height, width=self.width, camera_id=self.camera_id
         )
-
-
-def make_vec_env(env_id, num_env, cfg=None, seed=0):
-    """
-    Creates a wrapped SubprocVecEnv using OpenAI gym interface.
-    Unity app will use the port number from @cfg.port to (@cfg.port + @num_env - 1).
-
-    Code modified based on
-    https://github.com/openai/baselines/blob/master/baselines/common/cmd_util.py
-
-    Args:
-        env_id: environment id registered in in `env/__init__.py`.
-        num_env: number of environments to launch.
-        cfg: general configuration for the environment.
-    """
-    env_kwargs = {}
-
-    if cfg is not None:
-        for key, value in cfg.__dict__.items():
-            env_kwargs[key] = value
-
-    def make_thunk(rank):
-        new_env_kwargs = env_kwargs.copy()
-        if "port" in new_env_kwargs:
-            new_env_kwargs["port"] = env_kwargs["port"] + rank
-        return lambda: get_gym_env(env_id, new_env_kwargs, seed + rank)
-
-    return SubprocVecEnv([make_thunk(i) for i in range(num_env)])
 
 
 def cat_spaces(spaces):
@@ -342,6 +323,7 @@ class ActionRepeatWrapper(gym.Wrapper):
 
 class DictWrapper(gym.Wrapper):
     """Make observation space and action space gym.spaces.Dict."""
+
     def __init__(self, env):
         super().__init__(env)
 
@@ -412,6 +394,7 @@ class FrameStackWrapper(gym.Wrapper):
 
 class ActionNormWrapper(gym.Wrapper):
     """Normalize action space to [-1, 1]."""
+
     def __init__(self, env):
         super().__init__(env)
 

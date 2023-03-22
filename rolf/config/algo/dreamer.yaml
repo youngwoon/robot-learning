@@ -27,6 +27,12 @@ gae_lambda: 0.95
 horizon: 15
 ob_norm: false
 
+# Loss
+critic_loss: mse
+image_loss: mse
+reward_loss: mse
+state_loss: mse
+
 buffer_size: 1000000
 sample_last_more: false
 reward_scale: 1.0
@@ -49,6 +55,8 @@ kl_balance: null
 ent_coef: 0
 pcont_scale: 10.0
 weight_decay: 0.0
+symlog: false
+unimix: 0
 
 encoder:
   image_shape: [64, 64, 3]

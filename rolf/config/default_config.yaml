@@ -13,6 +13,7 @@ init_ckpt_path: null
 init_ckpt_pretrained: false
 gpu: null
 pretrain: false
+num_envs: 1
 
 # Evaluation
 ckpt_num: null

@@ -17,10 +17,22 @@ import PIL.Image
 import gym.spaces
 from mpi4py import MPI
 
+from . import rmap
 
-# Note! This is l2 square, not l2
-def l2(a, b):
-    return torch.pow(torch.abs(a - b), 2).sum(dim=1)
+
+def sum_rightmost(value, dim):
+    if dim == 0:
+        return value
+    shape = value.shape[:-dim] + (-1,)
+    return value.reshape(shape).sum(-1)
+
+
+def symlog(x):
+    return torch.sign(x) * torch.log(torch.abs(x) + 1)
+
+
+def symexp(x):
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
 
 
 # required when we load optimizer from a checkpoint
@@ -67,10 +79,8 @@ def count_parameters(model):
 
 
 def slice_tensor(input, indices):
-    ret = {}
-    for k, v in input.items():
-        ret[k] = v[indices]
-    return ret
+    f = lambda x: x[indices]
+    return rmap(f, input)
 
 
 def average_gradients(model):
@@ -241,14 +251,9 @@ def dictlist_to_tensor(x, device):
 def to_tensor(x, device, dtype=torch.float):
     """Transfer a numpy array into a tensor."""
     if x is None:
-        return x
-    if isinstance(x, dict):
-        return OrderedDict(
-            [(k, torch.as_tensor(v, device=device, dtype=dtype)) for k, v in x.items()]
-        )
-    if isinstance(x, list):
-        return [torch.as_tensor(v, device=device, dtype=dtype) for v in x]
-    return torch.as_tensor(x, device=device, dtype=dtype)
+        return None
+    f = lambda v: torch.as_tensor(v, device=device, dtype=dtype)
+    return rmap(f, x)
 
 
 def list2dict(rollout):
@@ -498,8 +503,3 @@ def check_memory_kill_switch(avail_thresh=10.0):
                 exit(0)
     except FileNotFoundError:  # seems to happen infrequently
         pass
-
-
-def map_dict(fn, d):
-    """takes a dictionary and applies the function to every element"""
-    return type(d)(map(lambda kv: (kv[0], fn(kv[1])), d.items()))

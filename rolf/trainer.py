@@ -31,7 +31,7 @@ class Trainer(object):
 
         # Create environment for training.
         self._env = make_env(
-            cfg.env.id, cfg.env, cfg.seed, cfg.env.env_cfg.get("wrapper", True)
+            cfg.env.id, cfg.env, cfg.seed, cfg.num_envs
         )
         ob_space = self._env.observation_space
         ac_space = self._env.action_space
@@ -45,9 +45,7 @@ class Trainer(object):
             cfg_eval = cfg.copy()
             if hasattr(cfg_eval.env, "unity"):
                 cfg_eval.env.unity.port += 1
-            self._env_eval = make_env(
-                cfg.env.id, cfg_eval.env, cfg.seed, cfg.env.env_cfg.get("wrapper", True)
-            )
+            self._env_eval = make_env(cfg.env.id, cfg_eval.env, cfg.seed)
 
         # Build agent and networks for algorithm.
         self._agent = self._get_agent_by_name(cfg.rolf.name)(

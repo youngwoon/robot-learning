@@ -1,4 +1,5 @@
 from time import time
+from collections import OrderedDict
 
 import numpy as np
 
@@ -6,6 +7,15 @@ from .info_dict import Info, LOG_TYPES
 from .logger import Logger
 from .normalizer import Normalizer
 from .gym_env import make_env
+
+
+def rmap(func, x):
+    """Recursively applies `func` to list or dictionary `x`."""
+    if isinstance(x, dict):
+        return OrderedDict([(k, func(v)) for k, v in x.items()])
+    if isinstance(x, list):
+        return [func(v) for v in x]
+    return func(x)
 
 
 # Adapted from https://github.com/danijar/dreamer/blob/master/tools.py

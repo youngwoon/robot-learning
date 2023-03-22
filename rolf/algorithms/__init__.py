@@ -5,6 +5,7 @@ from .sac_agent import SACAgent
 from .ppo_agent import PPOAgent
 from .ddpg_agent import DDPGAgent
 from .dreamer_agent import DreamerAgent
+from .dreamer3_agent import Dreamer3Agent
 from .tdmpc_agent import TDMPCAgent
 
 # IL algorithms
@@ -19,6 +20,7 @@ RL_ALGOS = {
     "td3": DDPGAgent,
     "dreamer": DreamerAgent,
     "dreamer2": DreamerAgent,
+    "dreamer3": Dreamer3Agent,
     "tdmpc": TDMPCAgent,
 }
 

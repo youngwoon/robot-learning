@@ -7,8 +7,10 @@ import torch.nn.functional as F
 import gym.spaces
 
 from .utils import MLP, get_activation
-from .distributions import Normal, TanhNormal, MixedDistribution, OneHot
+from .distributions import Normal, TanhNormal, MixedDistribution, OneHot, Symlog
 
+from ..utils import rmap
+from ..utils.pytorch import symlog, symexp
 from ..utils.dreamer import static_scan
 
 
@@ -27,6 +29,7 @@ class DreamerModel(nn.Module):
             cfg.deter_dim,
             cfg.deter_dim,
             cfg.dense_act,
+            cfg.unimix,
             dtype,
             cfg.device,
         )
@@ -36,7 +39,9 @@ class DreamerModel(nn.Module):
         else:
             state_dim = cfg.deter_dim + cfg.stoch_dim
         self.decoder = Decoder(cfg.decoder, state_dim, ob_space)
-        self.reward = DenseDecoder1(state_dim, 1, [cfg.num_units] * 2, cfg.dense_act)
+        self.reward = DenseDecoder(
+            state_dim, 1, [cfg.num_units] * 2, cfg.dense_act, cfg.reward_loss
+        )
 
     def initial(self, batch_size):
         return self.dynamics.initial(batch_size)
@@ -81,25 +86,27 @@ class Encoder(nn.Module):
                     cfg.embed_dim,
                     cfg.hidden_dims,
                     cfg.dense_act,
+                    cfg.symlog,
                 )
             else:
                 raise ValueError("Observations should be either vectors or RGB images")
             self.output_dim += self.encoders[k].output_dim
 
     def forward(self, ob):
-        if not isinstance(ob, dict):  # TODO: use DictWrapper instead of these lines.
-            ob = {"ob": ob}
         embeddings = [self.encoders[k](v) for k, v in ob.items()]
         return torch.cat(embeddings, -1)
 
 
 class DenseEncoder(nn.Module):
-    def __init__(self, shape, embed_dim, hidden_dims, activation):
+    def __init__(self, shape, embed_dim, hidden_dims, activation, symlog):
         super().__init__()
-        self.fc = MLP(shape, embed_dim, hidden_dims, activation)
+        self.fc = MLP(shape, embed_dim, hidden_dims, activation, norm=True)
         self.output_dim = embed_dim
+        self._symlog = symlog
 
     def forward(self, ob):
+        if self._symlog:
+            ob = rmap(symlog, ob)
         return self.fc(ob)
 
 
@@ -141,6 +148,7 @@ class Decoder(nn.Module):
                     cfg.stride,
                     cfg.conv_dim,
                     cfg.cnn_act,
+                    cfg.image_loss,
                 )
             elif len(v.shape) == 1:
                 self.decoders[k] = DenseDecoder(
@@ -148,6 +156,7 @@ class Decoder(nn.Module):
                     gym.spaces.flatdim(v),
                     cfg.hidden_dims,
                     cfg.dense_act,
+                    cfg.state_loss,
                 )
             else:
                 raise ValueError("Observations should be either vectors or RGB images")
@@ -161,12 +170,15 @@ class Decoder(nn.Module):
 class ConvDecoder(nn.Module):
     """CNN decoder returns normal distribution of prediction with std 1."""
 
-    def __init__(self, input_dim, shape, kernel_size, stride, conv_dim, activation):
+    def __init__(
+        self, input_dim, shape, kernel_size, stride, conv_dim, activation, loss
+    ):
         super().__init__()
         self._shape = list(shape)
         self._conv_dim = conv_dim
 
-        self.fc = MLP(input_dim, conv_dim[0], [], None)
+        self.fc = MLP(input_dim, conv_dim[0], [], None, norm=True)
+        self._loss = loss
 
         d_prev = conv_dim[0]
         conv_dim = conv_dim + [shape[-1]]
@@ -176,8 +188,7 @@ class ConvDecoder(nn.Module):
             deconvs.append(nn.ConvTranspose2d(d_prev, d, k, s))
             deconvs.append(activation)
             d_prev = d
-        deconvs.pop()
-        self.deconvs = nn.Sequential(*deconvs)
+        self.deconvs = nn.Sequential(*deconvs[:-1])
 
     def forward(self, feat):
         shape = list(feat.shape[:-1]) + self._shape
@@ -192,63 +203,26 @@ class ConvDecoder(nn.Module):
 class DenseDecoder(nn.Module):
     """MLP decoder returns normal distribution of prediction."""
 
-    def __init__(self, input_dim, output_dim, hidden_dims, activation):
+    def __init__(self, input_dim, output_dim, hidden_dims, activation, loss):
         super().__init__()
-        self.fc = MLP(input_dim, output_dim * 2, hidden_dims, activation)
+
+        if loss == "normal":
+            self.fc = MLP(input_dim, output_dim * 2, hidden_dims, activation, norm=True)
+        elif loss == "mse":
+            self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
+        elif loss == "symlog_mse":
+            self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
+        self._loss = loss
 
     def forward(self, feat):
-        mean, std = self.fc(feat).chunk(2, dim=-1)
-        std = (std.tanh() + 1) * 0.7 + 0.1  # [0.1, 1.5]
-        return Normal(mean, std, event_dim=1)
-
-
-class DenseDecoder1(nn.Module):
-    """MLP decoder returns normal distribution of prediction with std 1."""
-
-    def __init__(self, input_dim, output_dim, hidden_dims, activation):
-        super().__init__()
-        self.fc = MLP(input_dim, output_dim, hidden_dims, activation)
-
-    def forward(self, feat):
-        return Normal(self.fc(feat), 1, event_dim=1)
-
-
-class Critic(nn.Module):
-    """MLP decoder returns normal distribution of prediction with std 1."""
-
-    def __init__(self, input_dim, output_dim, hidden_dims, activation, ensemble=1):
-        super().__init__()
-        self.fcs = nn.ModuleList()
-        for _ in range(ensemble):
-            self.fcs.append(MLP(input_dim, output_dim, hidden_dims, activation))
-
-    def forward(self, feat):
-        return [Normal(fc(feat), 1, event_dim=1) for fc in self.fcs]
-
-
-class DenseDecoderTanh(nn.Module):
-    """MLP decoder returns tanh normal distribution of prediction."""
-
-    def __init__(self, input_dim, output_dim, hidden_dims, activation, log_std=False):
-        super().__init__()
-        init_std = 5
-        self._raw_init_std = np.log(np.exp(init_std) - 1)
-        self._min_std = 1e-4
-        self._mean_scale = 5
-        self._log_std = log_std
-
-        self.fc = MLP(input_dim, output_dim * 2, hidden_dims, activation)
-
-    def forward(self, feat):
-        if self._log_std:
-            mean, log_std = self.fc(feat).chunk(2, dim=-1)
-            std = torch.exp(torch.clamp(log_std, min=-10, max=2)) + self._min_std
-        else:
+        if self._loss == "normal":
             mean, std = self.fc(feat).chunk(2, dim=-1)
-            std = F.softplus(std + self._raw_init_std) + self._min_std
-            # std = (std.tanh() + 1) * 0.7 + self._min_std  # [1e-4, 1.4]
-        mean = self._mean_scale * (mean / self._mean_scale).tanh()
-        return TanhNormal(mean, std, event_dim=1)
+            std = (std.tanh() + 1) * 0.7 + 0.1  # [0.1, 1.5]
+            return Normal(mean, std, event_dim=1)
+        elif self._loss == "mse":
+            return Normal(self.fc(feat), 1, event_dim=1)
+        elif self._loss == "symlog_mse":
+            return Symlog(self.fc(feat), event_dim=1)
 
 
 class RSSM(nn.Module):
@@ -261,6 +235,7 @@ class RSSM(nn.Module):
         deter_dim,
         hidden_dim,
         activation,
+        unimix,
         dtype,
         device,
     ):
@@ -273,6 +248,8 @@ class RSSM(nn.Module):
             stoch_discrete: size of discrete stochastic latent state.
             deter_dim: size of deterministic latent state, |h|.
             hidden_dim: size of MLP hidden layers
+            activation:
+            unimix: add small number to prevent 0 probability in discrete stochastic latent state.
             dtype: data type for initial states
             device: device for torch tensors
         """
@@ -281,6 +258,7 @@ class RSSM(nn.Module):
         self._stoch_discrete = stoch_discrete
         self._deter_dim = deter_dim
         self._activation = get_activation(activation)
+        self._unimix = unimix
         self._dtype = dtype
         self._device = device
 
@@ -288,17 +266,25 @@ class RSSM(nn.Module):
             stoch_dim *= stoch_discrete
 
         self.cell = nn.GRUCell(hidden_dim, deter_dim)
-        self.deter_fc = MLP(stoch_dim + ac_dim, hidden_dim, [], activation)
+        self.deter_fc = MLP(stoch_dim + ac_dim, hidden_dim, [], activation, norm=True)
         if stoch_discrete:
             self.obs_fc = MLP(
-                deter_dim + embed_dim, stoch_dim, [hidden_dim], activation
+                deter_dim + embed_dim, stoch_dim, [hidden_dim], activation, norm=True
             )
-            self.imagine_fc = MLP(deter_dim, stoch_dim, [hidden_dim], activation)
+            self.imagine_fc = MLP(
+                deter_dim, stoch_dim, [hidden_dim], activation, norm=True
+            )
         else:
             self.obs_fc = MLP(
-                deter_dim + embed_dim, 2 * stoch_dim, [hidden_dim], activation
+                deter_dim + embed_dim,
+                2 * stoch_dim,
+                [hidden_dim],
+                activation,
+                norm=True,
             )
-            self.imagine_fc = MLP(deter_dim, 2 * stoch_dim, [hidden_dim], activation)
+            self.imagine_fc = MLP(
+                deter_dim, 2 * stoch_dim, [hidden_dim], activation, norm=True
+            )
 
     def initial(self, batch_size):
         zeros = lambda s: torch.zeros(
@@ -362,7 +348,7 @@ class RSSM(nn.Module):
 
     def get_dist(self, state):
         if self._stoch_discrete:
-            return OneHot(state["logit"], event_dim=1)
+            return OneHot(state["logit"], self._unimix, event_dim=1)
         else:
             return Normal(state["mean"], state["std"], event_dim=1)
 
@@ -450,7 +436,7 @@ class ActionDecoder(nn.Module):
         self._mean_scale = 5
         self._log_std = log_std
 
-        self.fc = MLP(input_dim, ac_dim * 2, hidden_dims, activation)
+        self.fc = MLP(input_dim, ac_dim * 2, hidden_dims, activation, norm=True)
 
     def forward(self, feat):
         if self._log_std:

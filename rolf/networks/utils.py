@@ -10,6 +10,7 @@ activation_map = {
     "elu": nn.ELU,
     "tanh": nn.Tanh,
     "sigmoid": nn.Sigmoid,
+    "silu": nn.SiLU,
 }
 
 
@@ -104,7 +105,13 @@ class CNN(nn.Module):
 
 class MLP(nn.Module):
     def __init__(
-        self, input_dim, output_dim, hidden_dims, activation, small_weight=False
+        self,
+        input_dim,
+        output_dim,
+        hidden_dims,
+        activation,
+        norm=False,
+        small_weight=False,
     ):
         super().__init__()
         activation = get_activation(activation)
@@ -112,8 +119,14 @@ class MLP(nn.Module):
 
         fcs = []
         for prev_d, d in zip(dims[:-1], dims[1:]):
-            fcs.extend([nn.Linear(prev_d, d), activation])
-        self.fcs = nn.Sequential(*fcs[:-1])
+            fcs.append(nn.Linear(prev_d, d))
+            if norm:
+                fcs.append(nn.LayerNorm(d))
+            fcs.append(activation)
+        if norm:
+            self.fcs = nn.Sequential(*fcs[:-2])
+        else:
+            self.fcs = nn.Sequential(*fcs[:-1])
         self.output_dim = output_dim
 
         self.apply(weight_init)

@@ -2,10 +2,10 @@ defaults:
   - common
   - _self_
 
-name: dreamer2
+name: dreamer3
 
 # Training
-max_global_step: 2000000
+max_global_step: 500000
 warm_up_step: 10000
 train_every: 5
 train_iter: 1
@@ -17,15 +17,19 @@ precision: 16
 
 batch_size: 50
 batch_length: 50  # RNN sequence length
-model_lr: 3e-4
-critic_lr: 8e-5
-actor_lr: 8e-5
+model_lr: 1e-4
+critic_lr: 3e-5
+actor_lr: 3e-5
 grad_clip: 100.0
 dataset_balance: false
 rl_discount: 0.999
 gae_lambda: 0.95
 horizon: 15
 ob_norm: false
+
+# Loss
+critic_loss: symlog_mse
+reward_loss: symlog_mse
 
 buffer_size: 2000000
 sample_last_more: true
@@ -41,32 +45,33 @@ deter_dim: 200
 stoch_dim: 32
 stoch_discrete: 32
 num_units: 200
-dense_act: elu
+dense_act: silu
 pcont: false
 free_nats: 1.0  # 0.0 for Atari
-kl_scale: 1.0
-kl_balance: 0.8
 ent_coef: 1e-4
 pcont_scale: 10.0
 weight_decay: 0.0
-symlog: false
-unimix: 0
+symlog: true
+unimix: 0.01
 
 encoder:
   image_shape: [64, 64, 3]
   kernel_size: [4, 4, 4, 4]
   stride: [2, 2, 2, 2]
   conv_dim: [32, 64, 128, 256]
-  cnn_act: relu
+  cnn_act: silu
   embed_dim: 256
   hidden_dims: [256, 256]
-  dense_act: elu
+  dense_act: silu
+  symlog: true
 
 decoder:
   image_shape: [64, 64, 3]
   kernel_size: [5, 5, 6, 6]
   stride: [2, 2, 2, 2]
   conv_dim: [1024, 128, 64, 32]
-  cnn_act: relu
+  cnn_act: silu
   hidden_dims: [256, 256]
-  dense_act: elu
+  dense_act: silu
+  image_loss: mse
+  state_loss: symlog_mse

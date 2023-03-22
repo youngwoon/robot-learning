@@ -159,10 +159,6 @@ def main(cfg: DictConfig) -> None:
     # make config writable
     OmegaConf.set_struct(cfg, False)
 
-    # change default config
-    cfg.wandb_entity = "your_wandb_entity"
-    cfg.wandb_project = "your_wandb_project"
-
     # execute training code
     Run(cfg).run()
 
