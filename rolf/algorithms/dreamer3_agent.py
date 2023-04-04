@@ -10,10 +10,11 @@ from .base_agent import BaseAgent
 from .dataset import ReplayBufferEpisode, SeqSampler
 from .dreamer_rollout import DreamerRolloutRunner
 from ..networks.dreamer import DreamerModel, ActionDecoder, DenseDecoder
-from ..utils import Logger, Once, Every, Info, StopWatch
+from ..utils import Logger, Once, Every, Info, StopWatch, rmap
 from ..utils.pytorch import optimizer_cuda, count_parameters
 from ..utils.pytorch import to_tensor, RequiresGrad, AdamAMP
-from ..utils.dreamer import static_scan, lambda_return
+from ..utils.pytorch import copy_network, soft_copy_network
+from ..utils.dreamer import static_scan, lambda_return, EMANorm
 
 
 class Dreamer3Agent(BaseAgent):
@@ -23,6 +24,7 @@ class Dreamer3Agent(BaseAgent):
         self._ac_space = ac_space
         self._ac_dim = ac_dim = gym.spaces.flatdim(ac_space)
         self._use_amp = cfg.precision == 16
+        self._compile = cfg.compile
         self._dtype = torch.float16 if self._use_amp else torch.float32
         state_dim = cfg.deter_dim + cfg.stoch_dim
         if cfg.stoch_discrete:
@@ -30,12 +32,11 @@ class Dreamer3Agent(BaseAgent):
 
         # Build up networks
         self.model = DreamerModel(cfg, ob_space, ac_dim, self._dtype)
-        self.actor = ActionDecoder(
-            state_dim, ac_dim, [cfg.num_units] * 4, cfg.dense_act
-        )
-        self.critic = DenseDecoder(
-            state_dim, 1, [cfg.num_units] * 3, cfg.dense_act, cfg.critic_loss
-        )
+        self.actor = ActionDecoder(state_dim, ac_dim, **cfg.actor_head)
+        self.critic = DenseDecoder(state_dim, 1, **cfg.critic_head)
+        self.critic_slow = DenseDecoder(state_dim, 1, **cfg.critic_head)
+        self.critic_norm = EMANorm(**cfg.critic_norm)
+        copy_network(self.critic_slow, self.critic)
         self.to(self._device)
 
         # Optimizers
@@ -55,9 +56,17 @@ class Dreamer3Agent(BaseAgent):
 
         self._log_creation()
         self._log_image = Every(cfg.log_every)
+        self._slow_critic_update = Every(cfg.critic.slow_update_freq)
 
         # Freeze modules. Only updated modules will be unfrozen.
         self.requires_grad_(False)
+
+        # torch.compile
+        self.model = torch.compile(self.model, disable=not cfg.compile)
+        self.actor = torch.compile(self.actor, disable=not cfg.compile)
+        self.critic = torch.compile(self.critic, disable=not cfg.compile)
+        self.critic_slow = torch.compile(self.critic_slow, disable=not cfg.compile)
+        # self._opt_update = torch.compile(self._update_network, disable=not cfg.compile)
 
     @property
     def ac_space(self):
@@ -103,6 +112,8 @@ class Dreamer3Agent(BaseAgent):
             "model": self.model.state_dict(),
             "actor": self.actor.state_dict(),
             "critic": self.critic.state_dict(),
+            "critic_slow": self.critic_slow.state_dict(),
+            "critic_norm": self.critic_norm.state_dict(),
             "model_optim": self.model_optim.state_dict(),
             "actor_optim": self.actor_optim.state_dict(),
             "critic_optim": self.critic_optim.state_dict(),
@@ -113,14 +124,16 @@ class Dreamer3Agent(BaseAgent):
         self.model.load_state_dict(ckpt["model"])
         self.actor.load_state_dict(ckpt["actor"])
         self.critic.load_state_dict(ckpt["critic"])
-        self.to(self._device)
+        self.critic_slow.load_state_dict(ckpt["critic_slow"])
+        self.critic_norm.load_state_dict(ckpt["critic_norm"])
+        self.to(self._device)  # TODO: remove it
 
         self.model_optim.load_state_dict(ckpt["model_optim"])
         self.actor_optim.load_state_dict(ckpt["actor_optim"])
         self.critic_optim.load_state_dict(ckpt["critic_optim"])
-        optimizer_cuda(self.model_optim, self._device)
-        optimizer_cuda(self.actor_optim, self._device)
-        optimizer_cuda(self.critic_optim, self._device)
+        optimizer_cuda(self.model_optim, self._device)  # TODO: remove it
+        optimizer_cuda(self.actor_optim, self._device)  # TODO: remove it
+        optimizer_cuda(self.critic_optim, self._device)  # TODO: remove it
 
     def update(self):
         train_info = Info()
@@ -136,6 +149,7 @@ class Dreamer3Agent(BaseAgent):
 
             sw_train.start()
             _train_info = self._update_network(batch, log_image=log_once())
+            # _train_info = self._opt_update(batch, log_image=log_once())
             train_info.add(_train_info)
             sw_train.stop()
         Logger.info(f"Data: {sw_data.average():.3f}  Train: {sw_train.average():.3f}")
@@ -154,7 +168,7 @@ class Dreamer3Agent(BaseAgent):
         o = batch["ob"]
         ac = batch["ac"]
         rew = batch["rew"]
-        done = batch["done"]
+        cont = 1 - batch["done"].float()
         o = self.preprocess(o)
 
         # Compute model loss
@@ -171,6 +185,9 @@ class Dreamer3Agent(BaseAgent):
                 reward_pred = self.model.reward(feat)
                 reward_loss = -reward_pred.log_prob(rew.unsqueeze(-1)).mean()
 
+                cont_pred = self.model.cont(feat)
+                cont_loss = -cont_pred.log_prob(cont.unsqueeze(-1)).mean()
+
                 prior_dist = self.model.get_dist(prior)
                 post_dist = self.model.get_dist(post)
 
@@ -186,47 +203,71 @@ class Dreamer3Agent(BaseAgent):
                 div_lhs_clipped = torch.clamp(div_lhs.mean(), min=cfg.free_nats)
                 div_rhs_clipped = torch.clamp(div_rhs.mean(), min=cfg.free_nats)
                 div_clipped = 0.1 * div_lhs_clipped + 0.5 * div_rhs_clipped
-                model_loss = div_clipped + recon_loss + reward_loss
+                model_loss = div_clipped + recon_loss + reward_loss + cont_loss
             model_grad_norm = self.model_optim.step(model_loss)
 
-        # Compute actor loss with imaginary rollout
+        # Compute actor loss with imaginary rollouts
         with RequiresGrad(self.actor):
             with torch.autocast(cfg.device, enabled=self._use_amp):
-                post = {k: v.detach() for k, v in post.items()}
-                imagine_feat = self._imagine_ahead(post)
-                imagine_reward = (
-                    self.model.reward(imagine_feat).mode.squeeze(-1).float()
-                )
-                imagine_value = self.critic(imagine_feat).mode.squeeze(-1).float()
-                pcont = cfg.rl_discount * torch.ones_like(imagine_reward)
-                imagine_return = lambda_return(
-                    imagine_reward[:-1],
-                    imagine_value[:-1],
-                    pcont[:-1],
-                    bootstrap=imagine_value[-1],
-                    lambda_=cfg.gae_lambda,
-                )
+                post = rmap(lambda v: v.detach(), post)
+                imagine_traj = self._imagine_ahead(post, cont)
+                imagine_feat = imagine_traj["feat"]
                 with torch.no_grad():
-                    discount = torch.cumprod(
-                        torch.cat([torch.ones_like(pcont[:1]), pcont[:-2]], 0), 0
+                    imagine_reward = (
+                        self.model.reward(imagine_feat).mode.squeeze(-1).float()
                     )
-                actor_entropy = self.actor(imagine_feat).entropy().mean()
-                actor_loss = -(discount * imagine_return).mean()
+
+                    # `imagine_value`: `H`x(`B`x`T`)
+                    # `imagine_return`: `H-1`x(`B`x`T`)
+                    imagine_value = self.critic(imagine_feat).mode.squeeze(-1).float()
+                    imagine_return = lambda_return(
+                        imagine_reward[:-1],
+                        imagine_value[:-1],
+                        imagine_traj["cont"][:-1] * cfg.rl_discount,
+                        bootstrap=imagine_value[-1],
+                        lambda_=cfg.gae_lambda,
+                    )
+                    discount = imagine_traj["discount"][:-1]
+
+                normalized_return = self.critic_norm(imagine_return)
+                normalized_value = self.critic_norm(imagine_value, update=False)
+                advantage = normalized_return - normalized_value[:-1]
+                policy = self.actor(imagine_feat.detach())
+                log_pi = policy.log_prob(imagine_traj["action"].detach())[:-1]
+                actor_entropy = policy.entropy()[:-1]
+                # actor_loss = -(discount * imagine_return).mean()
+                actor_loss = -log_pi * advantage.detach()
                 actor_loss += -cfg.ent_coef * actor_entropy
+                actor_loss = (discount * actor_loss).mean()
+                if actor_loss.item() < -100:
+                    import ipdb
+
+                    ipdb.set_trace()
+                actor_entropy = actor_entropy.mean()
             actor_grad_norm = self.actor_optim.step(actor_loss)
 
         # Compute critic loss
         with RequiresGrad(self.critic):
             with torch.autocast(cfg.device, enabled=self._use_amp):
-                value_pred = self.critic(imagine_feat.detach()[:-1])
+                feat_detached = imagine_feat.detach()[:-1]
+                value_pred = self.critic(feat_detached)
                 target = imagine_return.detach().unsqueeze(-1)
                 critic_loss = -(discount * value_pred.log_prob(target)).mean()
+                with torch.no_grad():
+                    slow_target = self.critic_slow(feat_detached).mean
+                critic_loss += -(discount * value_pred.log_prob(slow_target)).mean()
             critic_grad_norm = self.critic_optim.step(critic_loss)
+
+            if self._slow_critic_update():
+                soft_copy_network(
+                    self.critic_slow, self.critic, cfg.critic.slow_update_weight
+                )
 
         # Log scalar
         for k, v in recon_losses.items():
             info[f"recon_loss_{k}"] = v.item()
         info["reward_loss"] = reward_loss.item()
+        info["cont_loss"] = cont_loss.item()
         info["prior_entropy"] = prior_dist.entropy().mean().item()
         info["posterior_entropy"] = post_dist.entropy().mean().item()
         info["kl_loss"] = div_clipped.item()
@@ -275,21 +316,42 @@ class Dreamer3Agent(BaseAgent):
 
         return info.get_dict()
 
-    def _imagine_ahead(self, post):
+    def _imagine_ahead(self, post, cont):
         """Computes imagination rollouts.
         Args:
-            post: BxTx(`stoch_dim` + `deter_dim`) stochastic states.
+            post: `B`x`T`x(`stoch_dim` + `deter_dim`) stochastic states.
+            cont: `B`x`T` whether an episode continues.
+        Returns:
+            `B`x`T` imagined trajectories of length `cfg.horizon`.
         """
         flatten = lambda x: x.reshape([-1] + list(x.shape[2:]))
-        start = {k: flatten(v) for k, v in post.items()}
-        policy = lambda state: self.actor.act(self.model.get_feat(state).detach())
-        imagine_states = static_scan(
-            lambda prev, _: self.model.imagine_step(prev, policy(prev)),
-            [torch.arange(self._cfg.horizon)],
-            start,
-        )
-        imagine_feat = self.model.get_feat(imagine_states)
-        return imagine_feat
+        start = rmap(flatten, post)
+        start["action"] = self.actor.act(self.model.get_feat(start).detach())
+
+        def rollout(prev_state, _):
+            state = self.model.imagine_step(prev_state, prev_state["action"])
+            state["action"] = self.actor.act(self.model.get_feat(state).detach())
+            return state
+
+        # Imaginary rollouts.
+        traj = static_scan(rollout, [torch.arange(self._cfg.horizon)], start)
+
+        # Predict cont.
+        feat = self.model.get_feat(traj)
+        with torch.no_grad():
+            traj["cont"] = self.model.cont(feat).mode.squeeze()
+
+        # Include the first state and action.
+        start["cont"] = flatten(cont)
+        traj = {k: torch.cat([start[k][None], v], 0) for k, v in traj.items()}
+        traj["feat"] = self.model.get_feat(traj)
+
+        # Compute discount over timesteps.
+        gamma = self._cfg.rl_discount
+        with torch.no_grad():
+            traj["discount"] = torch.cumprod(gamma * traj["cont"], 0) / gamma
+
+        return traj
 
     def _policy(self, ob, state, is_train):
         """Computes actions given `ob` and `state`.

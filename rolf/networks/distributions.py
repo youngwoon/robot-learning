@@ -88,11 +88,16 @@ class Normal(torch.distributions.Independent):
 
 class Bernoulli(torch.distributions.Independent):
     def __init__(self, probs=None, logits=None, event_dim=0):
-        super().__init__(torch.distributions.bernoulli.Bernoulli(probs=probs, logits=logits), event_dim)
+        super().__init__(
+            torch.distributions.bernoulli.Bernoulli(probs=probs, logits=logits),
+            event_dim,
+        )
 
     @property
     def mode(self):
-        return self.mean
+        mode = super().mode
+        # Bernoulli distribution returns `nan` when p=0.5
+        return torch.nan_to_num(mode, nan=1.0)
 
 
 class Symlog(nn.Module):
@@ -168,6 +173,7 @@ class TanhNormal_(torch.distributions.transformed_distribution.TransformedDistri
 
 class TanhNormal(torch.distributions.Independent):
     def __init__(self, mean, std, event_dim=0):
+        self.event_dim = event_dim
         super().__init__(TanhNormal_(torch.clamp(mean, -9.0, 9.0), std), event_dim)
 
     @property
@@ -176,7 +182,7 @@ class TanhNormal(torch.distributions.Independent):
 
     def entropy(self):
         """No analytic form. Instead, use entropy of Normal as proxy."""
-        return self.base_dist.base_dist.entropy()
+        return sum_rightmost(self.base_dist.base_dist.entropy(), self.event_dim)
 
 
 class SampleDist(nn.Module):
@@ -258,7 +264,7 @@ class MixedDistribution(nn.Module):
 
     @property
     def mode(self):
-        return OrderedDict([(k, dist.mode()) for k, dist in self.base_dists.items()])
+        return OrderedDict([(k, dist.mode) for k, dist in self.base_dists.items()])
 
     def sample(self):
         return OrderedDict([(k, dist.sample()) for k, dist in self.base_dists.items()])

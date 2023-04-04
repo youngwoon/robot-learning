@@ -8,6 +8,7 @@ import gym.spaces
 
 from .utils import MLP, get_activation
 from .distributions import Normal, TanhNormal, MixedDistribution, OneHot, Symlog
+from .distributions import Bernoulli
 
 from ..utils import rmap
 from ..utils.pytorch import symlog, symexp
@@ -39,9 +40,8 @@ class DreamerModel(nn.Module):
         else:
             state_dim = cfg.deter_dim + cfg.stoch_dim
         self.decoder = Decoder(cfg.decoder, state_dim, ob_space)
-        self.reward = DenseDecoder(
-            state_dim, 1, [cfg.num_units] * 2, cfg.dense_act, cfg.reward_loss
-        )
+        self.reward = DenseDecoder(state_dim, 1, **cfg.reward_head)
+        self.cont = DenseDecoder(state_dim, 1, **cfg.cont_head)
 
     def initial(self, batch_size):
         return self.dynamics.initial(batch_size)
@@ -83,7 +83,6 @@ class Encoder(nn.Module):
             elif len(v.shape) == 1:
                 self.encoders[k] = DenseEncoder(
                     gym.spaces.flatdim(v),
-                    cfg.embed_dim,
                     cfg.hidden_dims,
                     cfg.dense_act,
                     cfg.symlog,
@@ -98,10 +97,10 @@ class Encoder(nn.Module):
 
 
 class DenseEncoder(nn.Module):
-    def __init__(self, shape, embed_dim, hidden_dims, activation, symlog):
+    def __init__(self, shape, hidden_dims, activation, symlog):
         super().__init__()
-        self.fc = MLP(shape, embed_dim, hidden_dims, activation, norm=True)
-        self.output_dim = embed_dim
+        self.output_dim = hidden_dims[-1]
+        self.fc = MLP(shape, hidden_dims[-1], hidden_dims[:-1], activation, norm=True)
         self._symlog = symlog
 
     def forward(self, ob):
@@ -212,17 +211,24 @@ class DenseDecoder(nn.Module):
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
         elif loss == "symlog_mse":
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
+        elif loss == "binary":
+            self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
+        else:
+            raise ValueError(f"Loss type is not available: {loss}")
         self._loss = loss
 
     def forward(self, feat):
+        out = self.fc(feat)
         if self._loss == "normal":
-            mean, std = self.fc(feat).chunk(2, dim=-1)
+            mean, std = out.chunk(2, dim=-1)
             std = (std.tanh() + 1) * 0.7 + 0.1  # [0.1, 1.5]
             return Normal(mean, std, event_dim=1)
         elif self._loss == "mse":
-            return Normal(self.fc(feat), 1, event_dim=1)
+            return Normal(out, 1, event_dim=1)
         elif self._loss == "symlog_mse":
-            return Symlog(self.fc(feat), event_dim=1)
+            return Symlog(out, event_dim=1)
+        elif self._loss == "binary":
+            return Bernoulli(logits=out, event_dim=1)
 
 
 class RSSM(nn.Module):
@@ -454,7 +460,7 @@ class ActionDecoder(nn.Module):
         if cond is not None:
             state = torch.cat([state, cond], -1)
         dist = self.forward(state)
-        action = dist.mode() if deterministic else dist.rsample()
+        action = dist.mode if deterministic else dist.rsample()
         if return_dist:
             return action, dist
         return action

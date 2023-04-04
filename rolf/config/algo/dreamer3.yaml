@@ -14,6 +14,7 @@ evaluate_every: 10000
 ckpt_every: 50000
 
 precision: 16
+compile: true
 
 batch_size: 50
 batch_length: 50  # RNN sequence length
@@ -22,7 +23,7 @@ critic_lr: 3e-5
 actor_lr: 3e-5
 grad_clip: 100.0
 dataset_balance: false
-rl_discount: 0.999
+rl_discount: 0.997
 gae_lambda: 0.95
 horizon: 15
 ob_norm: false
@@ -30,6 +31,16 @@ ob_norm: false
 # Loss
 critic_loss: symlog_mse
 reward_loss: symlog_mse
+
+critic:
+  slow_update_weight: 0.98
+  slow_update_freq: 1
+
+critic_norm:
+  update_weight: 0.95
+  min_scale: 1.0
+  clip_percentage_low: 0.05
+  clip_percentage_high: 0.95
 
 buffer_size: 2000000
 sample_last_more: true
@@ -41,14 +52,14 @@ expl_decay: 0.0
 expl_min: 0.0
 
 # Model
-deter_dim: 200
+deter_dim: 512
 stoch_dim: 32
 stoch_discrete: 32
-num_units: 200
+num_units: 512
 dense_act: silu
-pcont: false
+pcont: true
 free_nats: 1.0  # 0.0 for Atari
-ent_coef: 1e-4
+ent_coef: 3e-4
 pcont_scale: 10.0
 weight_decay: 0.0
 symlog: true
@@ -60,8 +71,7 @@ encoder:
   stride: [2, 2, 2, 2]
   conv_dim: [32, 64, 128, 256]
   cnn_act: silu
-  embed_dim: 256
-  hidden_dims: [256, 256]
+  hidden_dims: [512, 512]
   dense_act: silu
   symlog: true
 
@@ -71,7 +81,28 @@ decoder:
   stride: [2, 2, 2, 2]
   conv_dim: [1024, 128, 64, 32]
   cnn_act: silu
-  hidden_dims: [256, 256]
+  hidden_dims: [512, 512]
   dense_act: silu
   image_loss: mse
   state_loss: symlog_mse
+
+actor_head:
+  hidden_dims: [512, 512]
+  activation: silu
+
+critic_head:
+  hidden_dims: [512, 512]
+  activation: silu
+  loss: symlog_mse
+
+reward_head:
+  hidden_dims: [512, 512]
+  activation: silu
+  loss: symlog_mse
+
+cont_head:
+  hidden_dims: [512, 512]
+  activation: silu
+  loss: binary
+
+

@@ -23,8 +23,14 @@ class Every(object):
     def __init__(self, every, step=0):
         self._every = every
         self._last = step
+        self._step = step
 
-    def __call__(self, step):
+    def __call__(self, step=None):
+        if step is not None:
+            self._step = step
+        else:
+            self._step += 1
+            step = self._step
         if self._every is None:
             return False
         if self._last is None:
