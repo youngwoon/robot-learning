@@ -7,8 +7,8 @@ import torch.nn.functional as F
 import gym.spaces
 
 from .utils import MLP, get_activation
-from .distributions import Normal, TanhNormal, MixedDistribution, OneHot, Symlog
-from .distributions import Bernoulli
+from .distributions import Normal, TanhNormal, MixedDistribution, OneHot
+from .distributions import Bernoulli, Symlog, SymlogDiscrete
 
 from ..utils import rmap
 from ..utils.pytorch import symlog, symexp
@@ -211,6 +211,8 @@ class DenseDecoder(nn.Module):
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
         elif loss == "symlog_mse":
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
+        elif loss == "symlog_discrete":
+            self.fc = MLP(input_dim, output_dim * 255, hidden_dims, activation, norm=True)
         elif loss == "binary":
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
         else:
@@ -227,6 +229,10 @@ class DenseDecoder(nn.Module):
             return Normal(out, 1, event_dim=1)
         elif self._loss == "symlog_mse":
             return Symlog(out, event_dim=1)
+        elif self._loss == "symlog_discrete":
+            shape = list(out.shape[:-1]) + [out.shape[-1] // 255, 255]
+            out = out.reshape(shape)
+            return SymlogDiscrete(out, event_dim=1)
         elif self._loss == "binary":
             return Bernoulli(logits=out, event_dim=1)
 

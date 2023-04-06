@@ -46,7 +46,7 @@ class DreamerRolloutRunner(RolloutRunner):
         agent = self._agent
 
         # Initialize rollout buffer.
-        rollout = Rollout(["ob", "ac", "rew", "done"], cfg.rolf.precision)
+        rollout = Rollout(["ob", "ac", "rew", "done", "terminated"], cfg.rolf.precision)
         reward_info = Info()
         ep_info = Info()
         rollout_len = 0
@@ -61,6 +61,7 @@ class DreamerRolloutRunner(RolloutRunner):
 
             # Add dummy previous action for the first transition.
             rollout.add(dict(ob=ob_next, ac=dummy_ac, rew=0.0, done=False))
+            rollout.add(dict(terminated=False))
 
             # Rollout one episode.
             while not done:
@@ -86,6 +87,7 @@ class DreamerRolloutRunner(RolloutRunner):
 
                 flat_ac = gym.spaces.flatten(env.action_space, ac)
                 rollout.add(dict(ob=ob_next, ac=flat_ac, done=done, rew=float(reward)))
+                rollout.add(dict(terminated=terminated))
                 rollout_len += 1
                 reward_info.add(info)
 
@@ -124,7 +126,7 @@ class DreamerRolloutRunner(RolloutRunner):
         agent = self._agent
 
         # initialize rollout buffer
-        rollout = Rollout(["ob", "ac", "rew", "done"], cfg.rolf.precision)
+        rollout = Rollout(["ob", "ac", "rew", "done", "terminated"], cfg.rolf.precision)
         reward_info = Info()
 
         done = False
@@ -156,6 +158,7 @@ class DreamerRolloutRunner(RolloutRunner):
 
             flat_ac = gym.spaces.flatten(env.action_space, ac)
             rollout.add(dict(ob=ob, ac=flat_ac, done=done, rew=reward))
+            rollout.add(dict(terminated=terminated))
 
             ep_len += 1
             ep_rew += reward

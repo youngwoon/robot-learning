@@ -60,7 +60,6 @@ dense_act: silu
 pcont: true
 free_nats: 1.0  # 0.0 for Atari
 ent_coef: 3e-4
-pcont_scale: 10.0
 weight_decay: 0.0
 symlog: true
 unimix: 0.01
@@ -93,12 +92,12 @@ actor_head:
 critic_head:
   hidden_dims: [512, 512]
   activation: silu
-  loss: symlog_mse
+  loss: symlog_discrete
 
 reward_head:
   hidden_dims: [512, 512]
   activation: silu
-  loss: symlog_mse
+  loss: symlog_discrete
 
 cont_head:
   hidden_dims: [512, 512]

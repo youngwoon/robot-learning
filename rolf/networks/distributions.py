@@ -119,6 +119,42 @@ class Symlog(nn.Module):
         return sum_rightmost(distance, self.event_dim)
 
 
+class SymlogDiscrete(nn.Module):
+    def __init__(self, logits, event_dim=0):
+        super().__init__()
+        self._logits = logits
+        self._probs = torch.softmax(logits, -1)
+        self._bins = torch.linspace(-20, 20, 255, dtype=logits.dtype, device=logits.device)
+        self._low = -20
+        self._high = 20
+        self.event_dim = event_dim
+
+    @property
+    def mean(self):
+        return symexp((self._probs * self._bins).sum(-1))
+
+    @property
+    def mode(self):
+        return self.mean
+
+    def log_prob(self, v):
+        v = symlog(v)
+        below = (self._bins <= v[..., None]).type(torch.int16).sum(-1) - 1
+        above = 255 - (self._bins > v[..., None]).type(torch.int16).sum(-1)
+        below = torch.clamp(below, 0, 254)
+        above = torch.clamp(above, 0, 254)
+        equal = below == above
+        dist_to_below = torch.where(equal, 1, torch.abs(self._bins[below] - v))
+        dist_to_above = torch.where(equal, 1, torch.abs(self._bins[above] - v))
+        total = dist_to_below + dist_to_above
+        weight_below = dist_to_below / total
+        weight_above = dist_to_above / total
+        target = F.one_hot(below, 255) * weight_below[..., None]
+        target += F.one_hot(above, 255) * weight_above[..., None]
+        log_pred = self._logits - torch.logsumexp(self._logits, -1, keepdim=True)
+        return sum_rightmost((target * log_pred).sum(-1), self.event_dim)
+
+
 class AddBias(nn.Module):
     def __init__(self, bias):
         super().__init__()
