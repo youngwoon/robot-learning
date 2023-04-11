@@ -4,7 +4,7 @@
 
 import numpy as np
 import torch
-import gym.spaces
+import gymnasium as gym
 
 from .base_agent import BaseAgent
 from .dataset import ReplayBufferEpisode, SeqSampler

@@ -1,7 +1,7 @@
 from collections import OrderedDict, deque
 
 import numpy as np
-import gym.spaces
+import gymnasium as gym
 
 from .mpi import mpi_sum
 from .logger import Logger

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import gym.spaces
+import gymnasium as gym
 
 from .utils import MLP, get_activation, weight_init
 from .distributions import TanhNormal

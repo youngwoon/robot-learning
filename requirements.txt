@@ -25,7 +25,7 @@ moviepy
 mpi4py
 
 # environments
-gym
+gymnasium
 dm_control
 
 # DL framework

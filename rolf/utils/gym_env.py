@@ -7,26 +7,27 @@ import os
 import copy
 from collections import deque, OrderedDict
 
-import gym
+import gymnasium as gym
 import numpy as np
 
 from . import Logger
-from .subproc_vec_env import SubprocEnv, SubprocVecEnv
 
 
-def make_env(id, cfg, seed=0, num_envs=1):
+def make_env(id, cfg, seed=0, num_envs=1, gpu=None):
     """Creates `nenvs` environments with `id` and `cfg`."""
     wrapper = cfg.env_cfg.get("wrapper", True)
-    env_fns = [lambda: make_one_env(id, cfg, seed + i, wrapper) for i in range(num_envs)]
-    if num_envs == 1:
-        if cfg.env_cfg.get("subprocess", False):
-            return SubprocEnv(env_fns[0])
-        return env_fns[0]()
-    return SubprocVecEnv(env_fns)
+    env_fns = [
+        lambda: make_one_env(id, cfg, seed + i, wrapper, gpu) for i in range(num_envs)
+    ]
+    return gym.vector.AsyncVectorEnv(env_fns)
 
 
-def make_one_env(id, cfg, seed, wrapper):
+def make_one_env(id, cfg, seed, wrapper, gpu):
     """Creates an environment instance with `id` and `cfg`."""
+
+    if gpu is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+
     # Create a maze environment
     if id == "maze":
         from envs.maze import ACRandMaze0S40Env
@@ -174,7 +175,7 @@ class DMCGymEnv(gym.Env):
                 ob[k] = np.array([ob[k]])
         return ob
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         timestep = self._env.reset()
         return self._wrap_observation(timestep.observation), {}
 
@@ -182,8 +183,8 @@ class DMCGymEnv(gym.Env):
         timestep = self._env.step(action)
         ob = self._wrap_observation(timestep.observation)
         reward = timestep.reward or 0.0
-        terminated = timestep.last()
-        truncated = timestep.discount == 0 and not terminated
+        terminated = timestep.discount == 0
+        truncated = timestep.last() and not terminated
         return ob, reward, terminated, truncated, {}
 
     def render(self, *args, **kwargs):
@@ -265,7 +266,7 @@ class PixelWrapper(gym.Wrapper):
                 )
                 self.observation_space.spaces[key] = pixel_ob_space
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         ob, info = self.env.reset(seed=seed if seed is not None else self._seed)
         self._seed = None  # Initialize seed only once.
 
@@ -320,6 +321,8 @@ class ActionRepeatWrapper(gym.Wrapper):
                 break
         return ob, reward, terminated, truncated, info
 
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)
 
 class DictWrapper(gym.Wrapper):
     """Make observation space and action space gym.spaces.Dict."""
@@ -340,7 +343,7 @@ class DictWrapper(gym.Wrapper):
         else:
             self.action_space = env.action_space
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         ob, info = self.env.reset(seed=seed)
         return self._get_obs(ob), info
 
@@ -355,6 +358,8 @@ class DictWrapper(gym.Wrapper):
             ob = {self.key: ob}
         return ob
 
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)
 
 class FrameStackWrapper(gym.Wrapper):
     def __init__(self, env, frame_stack=3):
@@ -373,7 +378,7 @@ class FrameStackWrapper(gym.Wrapper):
             ob_space.append((k, space_stack))
         self.observation_space = gym.spaces.Dict(ob_space)
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         ob, info = self.env.reset(seed=seed)
         for _ in range(self._frame_stack):
             self._frames.append(ob)
@@ -390,6 +395,9 @@ class FrameStackWrapper(gym.Wrapper):
         for k in self.env.observation_space.spaces.keys():
             obs.append((k, np.concatenate([f[k] for f in frames], axis=-1)))
         return OrderedDict(obs)
+
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)
 
 
 class ActionNormWrapper(gym.Wrapper):
@@ -422,6 +430,9 @@ class ActionNormWrapper(gym.Wrapper):
             action[k] = np.clip(action[k], self._low[k], self._high[k])
         return self.env.step(action)
 
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)
+
 
 class StateNormWrapper(gym.ObservationWrapper):
     """Normalize state information to [-1, 1], but keeps images in [0, 255]."""
@@ -452,3 +463,6 @@ class StateNormWrapper(gym.ObservationWrapper):
             ob[k] = ((ob[k] - self._low[k]) / (self._high[k] - self._low[k]) - 0.5) * 2
 
         return ob
+
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)

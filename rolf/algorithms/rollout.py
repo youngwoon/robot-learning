@@ -242,7 +242,8 @@ class RolloutRunner(object):
 
     def _render_frame(self, ep_len, ep_rew, info={}):
         """Renders a video frame and adds caption."""
-        frame = self._env_eval.render("rgb_array")
+        frame = self._env_eval.call("render", "rgb_array")[0]
+
         if isinstance(frame, list):
             frame = np.concatenate(frame, axis=1)
         if len(frame.shape) == 4:

@@ -31,10 +31,15 @@ class Trainer(object):
 
         # Create environment for training.
         self._env = make_env(
-            cfg.env.id, cfg.env, cfg.seed, cfg.num_envs
+            cfg.env.id, cfg.env, cfg.seed, cfg.num_envs, cfg.gpu
         )
-        ob_space = self._env.observation_space
-        ac_space = self._env.action_space
+        if hasattr(self._env, "single_observation_space"):
+            ob_space = self._env.single_observation_space
+            ac_space = self._env.single_action_space
+        else:
+            ob_space = self._env.observation_space
+            ac_space = self._env.action_space
+        Logger.info(f"Number of environments: {cfg.num_envs}")
         Logger.info(f"Observation space: {ob_space}")
         Logger.info(f"Action space: {ac_space}")
 

@@ -3,7 +3,7 @@ Runs rollouts (RolloutRunner class) and collects transitions using Rollout class
 """
 
 import numpy as np
-import gym.spaces
+import gymnasium as gym
 
 from .rollout import Rollout, RolloutRunner
 from ..utils import Logger, Info, Every

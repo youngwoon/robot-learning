@@ -14,7 +14,7 @@ import torchvision.utils as vutils
 import torchvision.transforms.functional as TF
 from torch.linalg import norm
 import PIL.Image
-import gym.spaces
+import gymnasium as gym
 from mpi4py import MPI
 
 from . import rmap

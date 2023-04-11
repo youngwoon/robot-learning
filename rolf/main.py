@@ -40,7 +40,7 @@ class Run(object):
         np.set_printoptions(suppress=True)
 
         if cfg.gpu is not None:
-            os.environ["CUDA_VISIBLE_DEVICES"] = "{}".format(cfg.gpu)
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
             assert torch.cuda.is_available()
             cfg.device = cfg.rolf.device = "cuda"
         else:

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import gym.spaces
+import gymnasium as gym
 
 from .utils import MLP
 

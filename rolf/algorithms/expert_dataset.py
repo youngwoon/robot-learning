@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-import gym.spaces
+import gymnasium as gym
 
 from ..utils import Logger
 

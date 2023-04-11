@@ -3,9 +3,9 @@ Code reference:
   https://github.com/MishaLaskin/rad/blob/master/encoder.py
 """
 
-import gym.spaces
 import torch
 import torch.nn as nn
+import gymnasium as gym
 
 from .utils import CNN, flatten_ac
 

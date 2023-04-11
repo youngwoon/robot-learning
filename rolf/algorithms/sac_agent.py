@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import gym.spaces
+import gymnasium as gym
 
 from .base_agent import BaseAgent
 from .dataset import ReplayBuffer, RandomSampler
