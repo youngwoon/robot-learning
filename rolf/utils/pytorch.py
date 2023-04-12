@@ -438,10 +438,10 @@ class RequiresGrad(object):
 class AdamAMP(object):
     """Adam optimizer for automatic mixed precision."""
 
-    def __init__(self, model, lr, weight_decay, grad_clip, device, use_amp):
+    def __init__(self, model, lr, eps, weight_decay, grad_clip, device, use_amp):
         self._model = model
         self._optim = optim.Adam(
-            self._params(), lr=lr, eps=1e-7, weight_decay=weight_decay
+            self._params(), lr=lr, eps=eps, weight_decay=weight_decay
         )
         self._scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
         self._grad_clip = grad_clip

@@ -40,7 +40,7 @@ class DreamerAgent(BaseAgent):
 
         # Optimizers
         adam_amp = lambda model, lr: AdamAMP(
-            model, lr, cfg.weight_decay, cfg.grad_clip, self._device, self._use_amp
+            model, lr, 1e-7, cfg.weight_decay, cfg.grad_clip, self._device, self._use_amp
         )
         self.model_optim = adam_amp(self.model, cfg.model_lr)
         self.actor_optim = adam_amp(self.actor, cfg.actor_lr)

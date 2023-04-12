@@ -39,13 +39,19 @@ class Dreamer3Agent(BaseAgent):
         copy_network(self.critic_slow, self.critic)
         self.to(self._device)
 
-        # Optimizers
-        adam_amp = lambda model, lr: AdamAMP(
-            model, lr, cfg.weight_decay, cfg.grad_clip, self._device, self._use_amp
+        # Optimizers.
+        adam_amp = lambda model, optim_cfg: AdamAMP(
+            model,
+            optim_cfg.lr,
+            optim_cfg.eps,
+            optim_cfg.weight_decay,
+            optim_cfg.grad_clip,
+            self._device,
+            self._use_amp,
         )
-        self.model_optim = adam_amp(self.model, cfg.model_lr)
-        self.actor_optim = adam_amp(self.actor, cfg.actor_lr)
-        self.critic_optim = adam_amp(self.critic, cfg.critic_lr)
+        self.wm_optim = adam_amp(self.wm, cfg.wm_optim)
+        self.actor_optim = adam_amp(self.actor, cfg.actor_optim)
+        self.critic_optim = adam_amp(self.critic, cfg.critic_optim)
 
         # Per-episode replay buffer
         sampler = SeqSampler(cfg.batch_length, cfg.sample_last_more)
