@@ -1,13 +1,12 @@
 # Dreamer code reference:
-# Dreamer: https://github.com/danijar/dreamer
-# DreamerV2: https://github.com/danijar/dreamerv2
+# DreamerV3: https://github.com/danijar/dreamerv3
 
 import numpy as np
 import torch
 import gymnasium as gym
 
 from .base_agent import BaseAgent
-from .dataset import ReplayBufferEpisode, SeqSampler
+from .dataset import ReplayBufferDreamer, SeqSampler
 from .dreamer_rollout import DreamerRolloutRunner
 from ..networks.dreamer import DreamerModel, ActionDecoder, DenseDecoder
 from ..utils import Logger, Once, Every, Info, StopWatch, rmap
@@ -53,11 +52,15 @@ class Dreamer3Agent(BaseAgent):
         self.actor_optim = adam_amp(self.actor, cfg.actor_optim)
         self.critic_optim = adam_amp(self.critic, cfg.critic_optim)
 
-        # Per-episode replay buffer
-        sampler = SeqSampler(cfg.batch_length, cfg.sample_last_more)
+        # Replay buffer.
+        sampler = SeqSampler(cfg.batch_length)
         buffer_keys = ["ob", "ac", "rew", "done", "terminated"]
-        self._buffer = ReplayBufferEpisode(
-            buffer_keys, cfg.buffer_size, sampler.sample_func_tensor, cfg.precision
+        self._buffer = ReplayBufferDreamer(
+            buffer_keys,
+            cfg.buffer_size,
+            sampler.sample_uniform,
+            self._device,
+            cfg.precision,
         )
 
         self._log_creation()

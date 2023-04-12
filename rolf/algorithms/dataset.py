@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import torch.utils.data
 
-from ..utils import Logger
+from ..utils import Logger, rmap
 
 
 def _convert(value, precision):
@@ -90,6 +90,114 @@ class ReplayBuffer(object):
         Logger.info(f"Load {n} states")
 
 
+class ReplayBufferDreamer(object):
+    """Replay buffer storing each transition in file."""
+
+    def __init__(self, keys, buffer_size, sample_func, device, precision=32):
+        self._capacity = buffer_size
+        self._sample_func = sample_func
+        self._device = device
+        self._precision = precision
+
+        # Create the buffer to store info
+        self._keys = keys
+        self.clear()
+
+    @property
+    def size(self):
+        return self._capacity
+
+    @property
+    def buffer(self):
+        return self._buffer
+
+    def clear(self):
+        self._idx = 0
+        self._last_saved_idx = -1
+        self._buffer = None
+
+    def _convert(self, x):
+        return {
+            k: np.stack(x[k]) if isinstance(x[k][0], np.ndarray) else {
+                k2: np.stack([v[k2] for v in x[k]]) for k2 in x[k][0]
+            } for k in x
+        }
+
+    def store_episode(self, rollout):
+        """Stores `rollout` into `self._buffer`.
+
+        Args:
+            rollout: A dictionary of lists of transitions.
+        """
+        if len(list(rollout.values())[0]) == 0:
+            return
+
+        rollout = {k: rollout[k] for k in self._keys}
+        rollout = self._convert(rollout)
+        flat_rollout = tf.nest.flatten(rollout)
+        flat_rollout = [torch.as_tensor(v) for v in flat_rollout]
+        rollout_len = len(flat_rollout[0])
+        self._idx += rollout_len
+
+        if self._buffer is None:
+            flat_buffer = flat_rollout
+        else:
+            flat_buffer = tf.nest.flatten(self._buffer)
+            flat_buffer = [
+                torch.cat([v1, v2]) for v1, v2 in zip(flat_buffer, flat_rollout)
+            ]
+
+        if len(flat_buffer[0]) > self._capacity:
+            flat_buffer = [v[-self._capacity:] for v in flat_buffer]
+
+        self._buffer = tf.nest.pack_sequence_as(rollout, flat_buffer)
+
+    def sample(self, batch_size):
+        batch = self._sample_func(self._buffer, batch_size)
+        return rmap(lambda x: x.to(self._device), batch)
+
+    def state_dict(self):
+        """Returns new transitions in replay buffer."""
+        assert self._idx - self._last_saved_idx - 1 <= self._capacity
+        state_dict = {}
+        s = (self._last_saved_idx + 1) % self._capacity
+        e = (self._idx - 1) % self._capacity
+        flat_buffer = tf.nest.flatten(self._buffer)
+        transitions = [
+            v[s : e + 1] if s <= e else torch.cat([v[s:], v[: e + 1]])
+            for v in flat_buffer
+        ]
+        self._last_saved_idx = self._idx - 1
+        Logger.info(f"Store {len(transitions[0])} transitions")
+        transitions = tf.nest.pack_sequence_as(self._buffer, transitions)
+        return {"transitions": transitions}
+
+    def append_state_dict(self, state_dict):
+        """Adds transitions to replay buffer."""
+        if state_dict is None:
+            return
+        rollout = state_dict["transitions"]
+        flat_rollout = tf.nest.flatten(rollout)
+        n = len(flat_rollout[0])
+
+        if self._buffer is None:
+            flat_buffer = flat_rollout
+        else:
+            flat_buffer = tf.nest.flatten(self._buffer)
+            flat_buffer = [
+                torch.cat([v1, v2]) for v1, v2 in zip(flat_buffer, flat_rollout)
+            ]
+
+        if len(flat_buffer[0]) > self._capacity:
+            flat_buffer = [v[-self._capacity:] for v in flat_buffer]
+
+        self._buffer = tf.nest.pack_sequence_as(rollout, flat_buffer)
+
+        self._last_saved_idx += n
+        self._idx += n
+        Logger.info(f"Load {n} transitions")
+
+
 class ReplayBufferEpisode(object):
     """Replay buffer storing each episode in file."""
 
@@ -113,7 +221,6 @@ class ReplayBufferEpisode(object):
 
     def clear(self):
         self._idx = 0
-        self._new_episode = True
         self._last_saved_idx = -1
         self._buffer = deque(maxlen=self._capacity)
         self._rollout = {k: [] for k in self._keys}
@@ -280,6 +387,23 @@ class SeqSampler(object):
         # TODO: change cuda() to to(self._device)
         batch = [b.cuda() for b in batch]
         return tf.nest.pack_sequence_as(episode, batch)
+
+    def sample_uniform(self, dataset, batch_size):
+        """Samples a batch in tensor."""
+        flat_dataset = tf.nest.flatten(dataset)
+        dataset_len = len(flat_dataset[0])
+
+        new_tensor = lambda v, l: torch.empty(
+            (batch_size, l, *v.shape[1:]), dtype=v.dtype
+        )
+        batch = [new_tensor(v, self._seq_len) for v in flat_dataset]
+
+        idxs = np.random.randint(0, dataset_len - self._seq_len + 1, batch_size)
+        for i in range(batch_size):
+            for j, v in enumerate(flat_dataset):
+                batch[j][i] = v[idxs[i] : idxs[i] + self._seq_len]
+
+        return tf.nest.pack_sequence_as(dataset, batch)
 
     def sample_func_one_more_ob(self, dataset, batch_size):
         """Sample one more `ob` than other items."""

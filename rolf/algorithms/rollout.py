@@ -37,6 +37,10 @@ class Rollout(object):
         for key, value in data.items():
             self._history[key].append(self._convert(value))
 
+    def extend(self, data):
+        for key, value in data.items():
+            self._history[key].extend(value)
+
     def get(self):
         """Returns rollout buffer and clears buffer."""
         batch = {k: self._history[k] for k in self._keys}
