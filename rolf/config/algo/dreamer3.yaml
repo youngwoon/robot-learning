@@ -39,10 +39,6 @@ gae_lambda: 0.95
 horizon: 15
 ob_norm: false
 
-# Loss
-critic_loss: symlog_mse
-reward_loss: symlog_mse
-
 critic:
   slow_update_weight: 0.98
   slow_update_freq: 1
@@ -53,33 +49,27 @@ critic_norm:
   clip_percentage_low: 0.05
   clip_percentage_high: 0.95
 
-buffer_size: 2000000
-sample_last_more: true
+buffer_size: 1000000
 reward_scale: 1.0
 
-expl: additive_gaussian
-expl_noise: 0.3
-expl_decay: 0.0
-expl_min: 0.0
-
 # Model
-deter_dim: 512
-stoch_dim: 32
-stoch_discrete: 32
-num_units: 512
-dense_act: silu
-pcont: true
 free_nats: 1.0  # 0.0 for Atari
 ent_coef: 3e-4
-weight_decay: 0.0
-symlog: true
-unimix: 0.01
+
+wm:
+  deter_dim: 512
+  stoch_dim: 32
+  stoch_discrete: 32
+  activation: silu
+  symlog: true
+  unimix: 0.01
+  learned_initial_state: true
 
 encoder:
   image_shape: [64, 64, 3]
   kernel_size: [4, 4, 4, 4]
   stride: [2, 2, 2, 2]
-  conv_dim: [32, 64, 128, 256]
+  conv_dim: [3, 32, 64, 128, 256]
   cnn_act: silu
   hidden_dims: [512, 512]
   dense_act: silu
@@ -87,9 +77,10 @@ encoder:
 
 decoder:
   image_shape: [64, 64, 3]
-  kernel_size: [5, 5, 6, 6]
+  seed_shape: [4, 4, 256]
+  kernel_size: [4, 4, 4, 4]
   stride: [2, 2, 2, 2]
-  conv_dim: [1024, 128, 64, 32]
+  conv_dim: [256, 128, 64, 32, 3]
   cnn_act: silu
   hidden_dims: [512, 512]
   dense_act: silu

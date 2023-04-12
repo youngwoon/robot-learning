@@ -22,32 +22,21 @@ class DreamerModel(nn.Module):
         self.encoder = Encoder(cfg.encoder, ob_space)
 
         embed_dim = self.encoder.output_dim
-        self.dynamics = RSSM(
-            embed_dim,
-            ac_dim,
-            cfg.stoch_dim,
-            cfg.stoch_discrete,
-            cfg.deter_dim,
-            cfg.deter_dim,
-            cfg.dense_act,
-            cfg.unimix,
-            dtype,
-            cfg.device,
-        )
+        self.dynamics = RSSM(cfg.wm, embed_dim, ac_dim, dtype, cfg.device)
+        state_dim = self.dynamics.state_dim
 
-        if cfg.stoch_discrete:
-            state_dim = cfg.deter_dim + cfg.stoch_dim * cfg.stoch_discrete
-        else:
-            state_dim = cfg.deter_dim + cfg.stoch_dim
         self.decoder = Decoder(cfg.decoder, state_dim, ob_space)
         self.reward = DenseDecoder(state_dim, 1, **cfg.reward_head)
         self.cont = DenseDecoder(state_dim, 1, **cfg.cont_head)
 
+    def forward(self, embed, ac, is_first, state=None):
+        return self.dynamics(embed, ac, is_first, state)
+
     def initial(self, batch_size):
         return self.dynamics.initial(batch_size)
 
-    def observe(self, embed, ac, state=None):
-        return self.dynamics.observe(embed, ac, state)
+    def observe(self, embed, ac, is_first, state=None):
+        return self.dynamics.observe(embed, ac, is_first, state)
 
     def imagine(self, ac, state=None):
         return self.dynamics.imagine(ac, state)
@@ -63,6 +52,9 @@ class DreamerModel(nn.Module):
 
     def get_dist(self, state):
         return self.dynamics.get_dist(state)
+
+    def get_dist_sg(self, state):
+        return self.dynamics.get_dist_sg(state)
 
 
 class Encoder(nn.Module):
@@ -115,12 +107,14 @@ class ConvEncoder(nn.Module):
         convs = []
         activation = get_activation(activation)
         h, w, d_prev = shape
-        for k, s, d in zip(kernel_size, stride, conv_dim):
-            convs.append(nn.Conv2d(d_prev, d, k, s))
+        for k, s, d in zip(kernel_size, stride, conv_dim[1:]):
+            h = int(np.floor((h - k + 2) / s + 1))
+            w = int(np.floor((w - k + 2) / s + 1))
+            convs.append(nn.Conv2d(d_prev, d, k, s, padding=1, bias=False))
+            convs.append(nn.LayerNorm([d, h, w]))
+            # convs.append(nn.GroupNorm(d, d))  # Use GroupNorm to match official code
             convs.append(activation)
             d_prev = d
-            h = int(np.floor((h - k) / s + 1))
-            w = int(np.floor((w - k) / s + 1))
 
         self.convs = nn.Sequential(*convs)
         self.output_dim = h * w * d_prev
@@ -143,6 +137,7 @@ class Decoder(nn.Module):
                 self.decoders[k] = ConvDecoder(
                     state_dim,
                     cfg.image_shape,
+                    cfg.seed_shape,
                     cfg.kernel_size,
                     cfg.stride,
                     cfg.conv_dim,
@@ -170,29 +165,36 @@ class ConvDecoder(nn.Module):
     """CNN decoder returns normal distribution of prediction with std 1."""
 
     def __init__(
-        self, input_dim, shape, kernel_size, stride, conv_dim, activation, loss
+        self, input_dim, out_shape, seed_shape, kernel_size, stride, conv_dim, activation, loss
     ):
         super().__init__()
-        self._shape = list(shape)
+        self._shape = list(out_shape)
+        self._seed_shape = list(seed_shape)
+        self._seed_shape = self._seed_shape[2:] + self._seed_shape[:2]
         self._conv_dim = conv_dim
-
-        self.fc = MLP(input_dim, conv_dim[0], [], None, norm=True)
         self._loss = loss
-
-        d_prev = conv_dim[0]
-        conv_dim = conv_dim + [shape[-1]]
         activation = get_activation(activation)
+
+        self.fc = MLP(input_dim, np.prod(seed_shape), [], activation, norm=True)
+
+        d_prev, h, w = self._seed_shape
         deconvs = []
         for k, s, d in zip(kernel_size, stride, conv_dim[1:]):
-            deconvs.append(nn.ConvTranspose2d(d_prev, d, k, s))
+            h = (h - 1) * s + k - 2
+            w = (w - 1) * s + k - 2
+            deconvs.append(nn.ConvTranspose2d(d_prev, d, k, s, padding=1, bias=False))
+            deconvs.append(nn.LayerNorm([d, h, w]))
+            # deconvs.append(nn.GroupNorm(d, d))  # Use GroupNorm to match official code
             deconvs.append(activation)
             d_prev = d
-        self.deconvs = nn.Sequential(*deconvs[:-1])
+        deconvs = deconvs[:-3]
+        deconvs.append(nn.ConvTranspose2d(conv_dim[-2], conv_dim[-1], k, s, padding=1))
+        self.deconvs = nn.Sequential(*deconvs)
 
     def forward(self, feat):
         shape = list(feat.shape[:-1]) + self._shape
         x = self.fc(feat)
-        x = x.reshape([-1, self._conv_dim[0], 1, 1])
+        x = x.reshape([-1, *self._seed_shape])
         x = self.deconvs(x)
         x = x.permute(0, 2, 3, 1)
         x = x.reshape(shape)
@@ -212,7 +214,9 @@ class DenseDecoder(nn.Module):
         elif loss == "symlog_mse":
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
         elif loss == "symlog_discrete":
-            self.fc = MLP(input_dim, output_dim * 255, hidden_dims, activation, norm=True)
+            self.fc = MLP(
+                input_dim, output_dim * 255, hidden_dims, activation, norm=True, small_weight=True
+            )
         elif loss == "binary":
             self.fc = MLP(input_dim, output_dim, hidden_dims, activation, norm=True)
         else:
@@ -238,70 +242,68 @@ class DenseDecoder(nn.Module):
 
 
 class RSSM(nn.Module):
-    def __init__(
-        self,
-        embed_dim,
-        ac_dim,
-        stoch_dim,
-        stoch_discrete,
-        deter_dim,
-        hidden_dim,
-        activation,
-        unimix,
-        dtype,
-        device,
-    ):
+    def __init__(self, cfg, embed_dim, ac_dim, dtype, device):
         """Dynamics model.
 
         Args:
+            cfg:
+                stoch_dim: size of stochastic latent state, |s|.
+                stoch_discrete: size of discrete stochastic latent state.
+                deter_dim: size of deterministic latent state, |h|.
+                hidden_dim: size of MLP hidden layers (= |h| for simplicity).
+                activation: activation function for MLP.
+                unimix: add small number to prevent 0 probability in discrete stochastic latent state.
+                learned_initial_state: whether to update initial states.
             embed_dim: size of observation embedding.
             ac_dim: size of action, |a|.
-            stoch_dim: size of stochastic latent state, |s|.
-            stoch_discrete: size of discrete stochastic latent state.
-            deter_dim: size of deterministic latent state, |h|.
-            hidden_dim: size of MLP hidden layers
-            activation:
-            unimix: add small number to prevent 0 probability in discrete stochastic latent state.
-            dtype: data type for initial states
-            device: device for torch tensors
+            dtype: data type for initial states.
+            device: device for torch tensors.
         """
         super().__init__()
-        self._stoch_dim = stoch_dim
-        self._stoch_discrete = stoch_discrete
-        self._deter_dim = deter_dim
-        self._activation = get_activation(activation)
-        self._unimix = unimix
+
+        self._stoch_dim = stoch_dim = cfg.stoch_dim
+        self._stoch_discrete = cfg.stoch_discrete
+        self._deter_dim = deter_dim = cfg.deter_dim
+        self._activation = activation = get_activation(cfg.activation)
+        self._unimix = cfg.unimix
+        self._learned_initial_state = cfg.learned_initial_state
         self._dtype = dtype
         self._device = device
 
-        if stoch_discrete:
-            stoch_dim *= stoch_discrete
+        if cfg.stoch_discrete:
+            stoch_dim *= cfg.stoch_discrete
 
-        self.cell = nn.GRUCell(hidden_dim, deter_dim)
-        self.deter_fc = MLP(stoch_dim + ac_dim, hidden_dim, [], activation, norm=True)
-        if stoch_discrete:
-            self.obs_fc = MLP(
-                deter_dim + embed_dim, stoch_dim, [hidden_dim], activation, norm=True
-            )
-            self.imagine_fc = MLP(
-                deter_dim, stoch_dim, [hidden_dim], activation, norm=True
-            )
-        else:
-            self.obs_fc = MLP(
-                deter_dim + embed_dim,
-                2 * stoch_dim,
-                [hidden_dim],
-                activation,
-                norm=True,
-            )
-            self.imagine_fc = MLP(
-                deter_dim, 2 * stoch_dim, [hidden_dim], activation, norm=True
-            )
+        self.state_dim = deter_dim + stoch_dim
+
+        self.cell = nn.GRUCell(deter_dim, deter_dim)
+        self.deter_fc = MLP(stoch_dim + ac_dim, deter_dim, [], activation, norm=True, out_act=True)
+
+        if not cfg.stoch_discrete:
+            stoch_dim *= 2
+
+        self.obs_fc = MLP(
+            deter_dim + embed_dim, stoch_dim, [deter_dim], activation, norm=True
+        )
+        self.imagine_fc = MLP(deter_dim, stoch_dim, [deter_dim], activation, norm=True)
+
+        if cfg.learned_initial_state:
+            deter = torch.zeros(deter_dim, device=device, requires_grad=True).float()
+            self.initial_deter = nn.parameter.Parameter(deter)
 
     def initial(self, batch_size):
+        if self._learned_initial_state:
+            deter = torch.tanh(self.initial_deter).expand(batch_size, -1)  # Why Tanh?
+            x = self.imagine_fc(deter)
+            logit = x.reshape(
+                *x.shape[:-1], self._stoch_dim, self._stoch_discrete
+            ).float()
+            stoch = self.get_dist({"logit": logit}).mode
+            return dict(logit=logit, stoch=stoch, deter=deter)
+
         zeros = lambda s: torch.zeros(
-            [batch_size] + s, dtype=self._dtype, device=self._device
-        )
+            [batch_size] + s, device=self._device, requires_grad=True
+        ).float()
+
         if self._stoch_discrete:
             return dict(
                 logit=zeros([self._stoch_dim, self._stoch_discrete]),
@@ -316,25 +318,57 @@ class RSSM(nn.Module):
                 deter=zeros([self._deter_dim]),
             )
 
-    def observe(self, embed, action, state=None):
+    def forward(self, embed, action, is_first, state):
         """Computes state posterior and prior on training batch.
+        embed:    [[o1], [o2], [o3], ...]
+        action:   [[a0], [a1], [a2], ...]
+        is_first: [[f1], [f2], [f3], ...]
+        state:    [h0, s0]
 
         Args:
             embed: Observation embedding of size BxTx`num_units`.
             action: Actions of size BxTx`action_dim`.
+            is_first: Whether an epsisode begins at each transition `B`x`T`.
+            state: Stochastic and deterministic states of size Bx(`stoch_dim`+`deter_dim`).
+        """
+        swap = lambda x: x.transpose(0, 1)
+        action = swap(action)
+        embed = swap(embed)
+        is_first = swap(is_first)
+        post = state
+        posts = []
+        priors = []
+        for i in range(len(is_first)):
+            post, prior = self.both_step(post, action[i], embed[i], is_first[i], state)
+            posts.append(post)
+            priors.append(prior)
+        post = {k: swap(torch.stack([x[k] for x in posts])) for k in state}
+        prior = {k: swap(torch.stack([x[k] for x in priors])) for k in state}
+        return post, prior
+
+    def observe(self, embed, action, is_first, state=None):
+        """Computes state posterior and prior on training batch.
+        embed:    [[o1], [o2], [o3], ...]
+        action:   [[a0], [a1], [a2], ...]
+        is_first: [[f1], [f2], [f3], ...]
+        state:    [h0, s0]
+
+        Args:
+            embed: Observation embedding of size BxTx`num_units`.
+            action: Actions of size BxTx`action_dim`.
+            is_first: Whether an epsisode begins at each transition `B`x`T`.
             state: (Optional) Stochastic and deterministic states of size Bx(`stoch_dim`+`deter_dim`).
         """
         if state is None:
             state = self.initial(action.shape[0])
-        embed, action = embed.transpose(0, 1), action.transpose(0, 1)
+        swap = lambda x: x.transpose(0, 1)
+        inputs = swap(action), swap(embed), swap(is_first)
         post, prior = static_scan(
-            lambda prev, inputs: self.both_step(prev[0], inputs[0], inputs[1]),
-            (action, embed),
+            lambda prev, inputs: self.both_step(prev[0], *inputs),
+            inputs,
             (state, state),
         )
-        post = {k: v.transpose(0, 1) for k, v in post.items()}
-        prior = {k: v.transpose(0, 1) for k, v in prior.items()}
-        return post, prior
+        return rmap(swap, post), rmap(swap, prior)
 
     def imagine(self, action, state=None):
         """Imaginary rollouts for debugging.
@@ -364,10 +398,18 @@ class RSSM(nn.Module):
         else:
             return Normal(state["mean"], state["std"], event_dim=1)
 
+    @torch.no_grad()
+    def get_dist_sg(self, state):
+        if self._stoch_discrete:
+            return OneHot(state["logit"].detach(), self._unimix, event_dim=1)
+        else:
+            return Normal(state["mean"].detach(), state["std"].detach(), event_dim=1)
+
     def get_state(self, x, deter):
         if self._stoch_discrete:
-            shape = list(x.shape[:-1])
-            logit = x.reshape(shape + [self._stoch_dim, self._stoch_discrete])
+            logit = x.reshape(
+                *x.shape[:-1], self._stoch_dim, self._stoch_discrete
+            ).float()
             stoch = self.get_dist({"logit": logit}).rsample()
             return {"logit": logit, "stoch": stoch, "deter": deter}
         else:
@@ -388,9 +430,8 @@ class RSSM(nn.Module):
             prev_stoch = prev_stoch.flatten(-2)
         x = torch.cat([prev_stoch, prev_action], -1)
         x = self.deter_fc(x)
-        x = self._activation(x)
         deter = self.cell(x, prev_state["deter"])
-        return deter
+        return deter.float()
 
     def imagine_step(self, prev_state, prev_action):
         """State prior without observation, p(s|h), where h=f(h',s',a').
@@ -418,22 +459,34 @@ class RSSM(nn.Module):
         post = self.get_state(x, deter)
         return post
 
-    def both_step(self, prev_state, prev_action, embed):
+    def both_step(self, prev_state, prev_action, embed, is_first, initial_state):
         """Returns both state posterior (`obs_step`) and prior (`imagine_step`).
 
         Args:
             prev_state: previous deterministic state, h', and stochastic state, s'
             prev_action: previous action, a'
             embed: current observation, o
+            is_first: whether the current state is the beginning of an episode.
         """
+        prev_state, prev_action = self.mask_state(
+            prev_state, prev_action, is_first, initial_state
+        )
         deter = self.deter_step(prev_state, prev_action)
-        x = self.imagine_fc(deter)
-        prior = self.get_state(x, deter)
-
-        x = torch.cat([deter, embed], -1)
-        x = self.obs_fc(x)
-        post = self.get_state(x, deter)
+        prior_x = self.imagine_fc(deter)
+        post_x = self.obs_fc(torch.cat([deter, embed], -1))
+        prior = self.get_state(prior_x, deter)
+        post = self.get_state(post_x, deter)
         return post, prior
+
+    def mask_state(self, prev_state, prev_action, is_first, initial_state):
+        if is_first.any():
+            prev_state = {
+                k: torch.einsum("b...,b->b...", prev_state[k], 1.0 - is_first)
+                + torch.einsum("b...,b->b...", initial_state[k], is_first)
+                for k in prev_state
+            }
+            prev_action = torch.einsum("b...,b->b...", prev_action, 1.0 - is_first)
+        return prev_state, prev_action
 
 
 class ActionDecoder(nn.Module):
