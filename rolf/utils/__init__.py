@@ -1,5 +1,5 @@
 from time import time
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 
@@ -12,9 +12,9 @@ from .gym_env import make_env
 def rmap(func, x):
     """Recursively applies `func` to list or dictionary `x`."""
     if isinstance(x, dict):
-        return OrderedDict([(k, func(v)) for k, v in x.items()])
+        return OrderedDict([(k, rmap(func, v)) for k, v in x.items()])
     if isinstance(x, list):
-        return [func(v) for v in x]
+        return [rmap(func, v) for v in x]
     return func(x)
 
 
@@ -70,20 +70,21 @@ class StopWatch(object):
         return fps
 
     def reset(self):
-        self._elapsed_time = []
+        self._elapsed_times = defaultdict(list)
         self._time = time()
+        self._times = {}
 
-    def start(self):
-        self._time = time()
+    def start(self, key=None):
+        self._times[key] = time()
 
-    def stop(self):
+    def stop(self, key=None):
         t = time()
-        self._elapsed_time.append(t - self._time)
-        self._time = t
-        return self._elapsed_time[-1]
+        self._elapsed_times[key].append(t - self._times[key])
+        self._times[key] = t
+        return self._elapsed_times[key][-1]
 
-    def average(self):
-        return sum(self._elapsed_time) / len(self._elapsed_time)
+    def average(self, key=None):
+        return sum(self._elapsed_times[key]) / len(self._elapsed_times[key])
 
 
 class LinearDecay(object):
