@@ -48,12 +48,10 @@ stoch_dim: 30
 stoch_discrete: 0
 num_units: 400
 dense_act: elu
-pcont: false
 free_nats: 3.0
 kl_scale: 1.0
 kl_balance: null
 ent_coef: 0
-pcont_scale: 10.0
 weight_decay: 0.0
 symlog: false
 unimix: 0
