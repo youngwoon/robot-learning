@@ -61,13 +61,15 @@ class OneHot(torch.distributions.Independent):
     def __init__(self, logits, unimix=0.0, event_dim=0):
         if unimix:
             probs = torch.softmax(logits, -1)
-            uniform = torch.ones_like(probs) / probs.shape[-1]
-            probs = (1 - unimix) * probs + unimix * uniform
-            logits = torch.log(probs)
+            probs = (1 - unimix) * probs + unimix / probs.shape[-1]
 
-        super().__init__(
-            torch.distributions.OneHotCategorical(logits=logits), event_dim
-        )
+            super().__init__(
+                torch.distributions.OneHotCategorical(probs=probs), event_dim
+            )
+        else:
+            super().__init__(
+                torch.distributions.OneHotCategorical(logits=logits), event_dim
+            )
 
     def rsample(self):
         sample = self.sample()
@@ -138,19 +140,21 @@ class SymlogDiscrete(nn.Module):
         return self.mean
 
     def log_prob(self, v):
-        v = symlog(v)
-        below = (self._bins <= v[..., None]).type(torch.int16).sum(-1) - 1
-        above = 255 - (self._bins > v[..., None]).type(torch.int16).sum(-1)
-        below = torch.clamp(below, 0, 254)
-        above = torch.clamp(above, 0, 254)
-        equal = below == above
-        dist_to_below = torch.where(equal, 1, torch.abs(self._bins[below] - v))
-        dist_to_above = torch.where(equal, 1, torch.abs(self._bins[above] - v))
-        total = dist_to_below + dist_to_above
-        weight_below = dist_to_below / total
-        weight_above = dist_to_above / total
-        target = F.one_hot(below, 255) * weight_below[..., None]
-        target += F.one_hot(above, 255) * weight_above[..., None]
+        with torch.no_grad():
+            v = symlog(v)
+            below = (self._bins <= v[..., None]).type(torch.int16).sum(-1) - 1
+            above = 255 - (self._bins > v[..., None]).type(torch.int16).sum(-1)
+            below = torch.clamp(below, 0, 254)
+            above = torch.clamp(above, 0, 254)
+            equal = below == above
+            dist_to_below = torch.where(equal, 1, torch.abs(self._bins[below] - v))
+            dist_to_above = torch.where(equal, 1, torch.abs(self._bins[above] - v))
+            total = dist_to_below + dist_to_above
+            # Small dist_to_above <-> large weight_below, and vice versa.
+            weight_below = dist_to_above / total
+            weight_above = dist_to_below / total
+            target = F.one_hot(below, 255) * weight_below[..., None]
+            target += F.one_hot(above, 255) * weight_above[..., None]
         log_pred = self._logits - torch.logsumexp(self._logits, -1, keepdim=True)
         return sum_rightmost((target * log_pred).sum(-1), self.event_dim)
 
