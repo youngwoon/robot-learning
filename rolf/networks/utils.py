@@ -26,10 +26,12 @@ def get_activation(activation):
 def weight_init(tensor):
     if isinstance(tensor, nn.Linear):
         nn.init.orthogonal_(tensor.weight.data)
-        tensor.bias.data.fill_(0.0)
+        if tensor.bias is not None:
+            tensor.bias.data.fill_(0.0)
     elif isinstance(tensor, nn.Conv2d) or isinstance(tensor, nn.ConvTranspose2d):
         tensor.weight.data.fill_(0.0)
-        tensor.bias.data.fill_(0.0)
+        if tensor.bias is not None:
+            tensor.bias.data.fill_(0.0)
         mid = tensor.weight.size(2) // 2
         gain = nn.init.calculate_gain("relu")
         # nn.init.orthogonal_(tensor.weight.data[:, :, mid, mid], gain)
@@ -46,8 +48,10 @@ def weight_init_xavier_uniform(tensor):
 
 
 def weight_init_small(tensor):
-    nn.init.orthogonal_(tensor.weight.data, gain=0.01)
-    tensor.bias.data.fill_(0.0)
+    if isinstance(tensor, nn.Linear):
+        nn.init.orthogonal_(tensor.weight.data, gain=0.01)
+        if tensor.bias is not None:
+            tensor.bias.data.fill_(0.0)
 
 
 def weight_init_xavier_normal(tensor):
@@ -111,6 +115,7 @@ class MLP(nn.Module):
         hidden_dims,
         activation,
         norm=False,
+        out_act=False,
         small_weight=False,
     ):
         super().__init__()
@@ -119,20 +124,20 @@ class MLP(nn.Module):
 
         fcs = []
         for prev_d, d in zip(dims[:-1], dims[1:]):
-            fcs.append(nn.Linear(prev_d, d))
+            fcs.append(nn.Linear(prev_d, d, bias=not norm))
             if norm:
                 fcs.append(nn.LayerNorm(d))
             fcs.append(activation)
-        if norm:
-            self.fcs = nn.Sequential(*fcs[:-2])
-        else:
-            self.fcs = nn.Sequential(*fcs[:-1])
+
+        if not out_act:
+            fcs = fcs[:-3 if norm else -2]
+            fcs.append(nn.Linear(prev_d, d))
+        self.fcs = nn.Sequential(*fcs)
         self.output_dim = output_dim
 
         self.apply(weight_init)
-        # self.apply(weight_init_xavier_normal)
         if small_weight:
-            self.fcs[-1].apply(weight_init_small)
+            self.apply(weight_init_small)
 
     def forward(self, ob):
         return self.fcs(ob)
