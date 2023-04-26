@@ -38,6 +38,10 @@ def make_env(id, cfg=None, seed=0, wrapper=True):
 
         env = CalvinEnv(**cfg)
 
+    elif id.startswith("mw."):
+        _, env_id = id.split(".", 2)
+        env = get_metaworld_env(env_id, cfg, seed)
+
     # Create any environment registered in Gym.
     else:
         # Get a default config if not provided
@@ -75,6 +79,14 @@ def make_env(id, cfg=None, seed=0, wrapper=True):
 
     return env
 
+def get_metaworld_env(env_id, cfg, seed):
+    """Creates meta world environment"""
+    from metaworld import ML1
+    env_cfg = cfg.get("env_cfg", {})
+    bench = ML1(env_id, seed = seed)
+    env = bench.train_classes[env_id]()
+    env = MetaworldWrapper(env, bench, seed, env_cfg.get("ep_len", 500))
+    return env
 
 def get_gym_env(env_id, cfg, seed):
     """Creates gym environment."""
@@ -253,6 +265,30 @@ def space_to_shape(space):
     elif isinstance(space, gym.spaces.Discrete):
         return [space.n]
 
+class MetaworldWrapper(gym.Wrapper):
+    def __init__(self, env, bench, seed, ep_len):
+        super().__init__(env)
+        self._bench = bench
+        self._rng = np.random.default_rng(seed = seed)
+        self._step_num = 0
+        self._ep_len = ep_len
+    
+    def reset(self, seed=None):
+        new_task = self._bench.train_tasks[self._rng.integers(0,len(self._bench.train_tasks))]
+        self.env.set_task(new_task)
+        self._step_num = 0
+        return self.env.reset(), {}
+
+    def step(self, ac):
+        ob, rew, done, info = self.env.step(ac)
+        self._step_num += 1
+        truncated = (self._step_num >= self._ep_len)
+        return ob, rew, done, truncated, info 
+    
+    def render(self, *args, **kwargs):
+        if len(kwargs) == 0:
+            kwargs = {"offscreen": True, "camera_name": "corner2", "resolution": (128,128)}
+        return self.env.render(**kwargs)
 
 class PixelWrapper(gym.Wrapper):
     def __init__(
@@ -283,6 +319,8 @@ class PixelWrapper(gym.Wrapper):
                     low=0, high=255, shape=shape, dtype=np.uint8
                 )
                 self.observation_space.spaces[key] = pixel_ob_space
+        
+        self.reset()
 
     def reset(self, seed=None):
         ob, info = self.env.reset(seed=seed if seed is not None else self._seed)
